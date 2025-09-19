@@ -12,11 +12,11 @@ const { LatLng, LatLngBounds } = sdkTypes;
 //       1) help customers to find relevant locations, and
 //       2) reduce the cost of using map providers geocoding API
 const defaultLocations = [
-  //{
+{
   id: 'default-lyon',
   predictionPlace: {
     address: 'Lyon, France',
-    bounds: new LatLngBounds(new LatLng(45.808420,4.898395), new LatLng(45.707481,4.771852)),
+    bounds: new LatLngBounds(new LatLng(45.808,4.898), new LatLng(45.707,4.771)),
   },
 },
 ];
