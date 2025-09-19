@@ -14,6 +14,7 @@ import defaultConfig from './config/configDefault';
 import appSettings from './config/settings';
 import configureStore from './store';
 
+
 // utils
 import { RouteConfigurationProvider } from './context/routeConfigurationContext';
 import { ConfigurationProvider } from './context/configurationContext';
@@ -348,3 +349,32 @@ export const renderApp = (
     return { head, body };
   });
 };
+
+//IntercomMessenger
+
+import React from 'react';
+import { useSelector } from 'react-redux';
+import IntercomMessenger from './components/IntercomMessenger';
+
+export default function App({ children }) {
+// ⚠️ adapte au nom exact du slice dans ton template
+const cu = useSelector(state => state.user?.currentUser);
+
+const intercomUser = cu
+? {
+id: cu.id?.uuid,
+email: cu.attributes?.email,
+name: cu.attributes?.profile?.displayName || 'Utilisateur',
+createdAt: cu.attributes?.createdAt,
+// si Secure Mode activé, on passera aussi un user_hash ici (voir §4)
+user_hash: cu.attributes?.protectedData?.intercomUserHash
+}
+: null;
+
+return (
+<>
+{children}
+<IntercomMessenger user={intercomUser} />
+</>
+);
+}
