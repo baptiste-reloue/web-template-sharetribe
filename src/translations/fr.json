@@ -463,7 +463,7 @@
   "InboxPage.seats": "Nombre de places : {seats}",
   "InboxPage.sortBy.createdAt": "Plus récentes",
   "InboxPage.sortBy.lastMessageAt": "Message le plus récent",
-  "InboxPage.sortBy.lastTransitionedAt": "Changement de statut le plus récent",
+  "InboxPage.sortBy.lastTransitionedAt": "Changement de statut le plus récente",
   "InboxPage.title": "Messagerie",
   "InboxSearchForm.sortLabel": "Trier par :",
   "InquiryForm.heading": "Faire une demande pour {listingTitle}",
