@@ -16,7 +16,7 @@ import EditListingLocationPanel from './EditListingLocationPanel/EditListingLoca
 import EditListingPhotosPanel from './EditListingPhotosPanel/EditListingPhotosPanel';
 import EditListingPricingPanel from './EditListingPricingPanel/EditListingPricingPanel';
 import EditListingPricingAndStockPanel from './EditListingPricingAndStockPanel/EditListingPricingAndStockPanel';
-import EditListingExtraFeaturesPanel from './EditListingExtraFeaturesPanel/EditListingExtraFeaturesPanel';
+import EditListingDeposit from './EditListingDeposit/EditListingDeposit';
 import EditListingStylePanel from './EditListingStylePanel/EditListingStylePanel';
 
 import css from './EditListingWizardTab.module.css';
@@ -24,7 +24,7 @@ import css from './EditListingWizardTab.module.css';
 export const DETAILS = 'details';
 export const PRICING = 'pricing';
 export const PRICING_AND_STOCK = 'pricing-and-stock';
-export const EXTRAFEATURES = 'extra-features';
+export const DEPOSIT = 'deposit';
 export const DELIVERY = 'delivery';
 export const LOCATION = 'location';
 export const AVAILABILITY = 'availability';
@@ -269,10 +269,10 @@ const EditListingWizardTab = props => {
         />
       );
     }
-    case EXTRAFEATURES: {
+    case DEPOSIT: {
       return (
-        <EditListingExtraFeaturesPanel
-          {...panelProps(EXTRAFEATURES)}
+        <EditListingDeposit
+          {...panelProps(DEPOSIT)}
         />
       );
     }
