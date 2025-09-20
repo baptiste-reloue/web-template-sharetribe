@@ -168,8 +168,8 @@ app.use(
     },
     referrerPolicy: { policy: 'origin' },
     crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy { policy: 'same-origin-allow-popus' },
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: 'same-origin-allow-popus',
+    crossOriginResourcePolicy: false,
   })
 );
 
