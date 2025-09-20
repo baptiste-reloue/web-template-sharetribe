@@ -11,7 +11,7 @@ importer { H3, ListingLink } depuis '../../../../components';
 
 // Importer des modules depuis ce répertoire
 importer EditListingExtraFeaturesForm depuis './EditListingExtraFeaturesForm';
-importer css depuis './EditListingExtraFeaturesPanel.module.css';
+importer css depuis './EditListingDeposit.module.css';
 
 const getInitialValues ​​= paramètres => {
   const { liste } = paramètres;
@@ -20,7 +20,7 @@ const getInitialValues ​​= paramètres => {
   retourner { extraFeatures };
 };
 
-const EditListingExtraFeaturesPanel = accessoires => {
+const EditListingDeposit = accessoires => {
   const {
     nom de classe,
     rootClassName,
@@ -44,12 +44,12 @@ const EditListingExtraFeaturesPanel = accessoires => {
       <H3 as="h1">
         {est publié ? (
           <Message formaté
-            id="EditListingExtraFeaturesPanel.title"
+            id="EditListingDeposit.title"
             valeurs={{ listingTitle: <ListingLink listing={listing} />, saut de ligne: <br /> }}
           />
         ) : (
           <Message formaté
-            id="EditListingExtraFeaturesPanel.createListingTitle"
+            id="EditListingDeposit.createListingTitle"
             valeurs={{ lineBreak: <br /> }}
           />
         )}
@@ -80,4 +80,4 @@ const EditListingExtraFeaturesPanel = accessoires => {
   );
 };
 
-exportation par défaut EditListingExtraFeaturesPanel ;
+exportation par défaut EditListingDeposit ;
