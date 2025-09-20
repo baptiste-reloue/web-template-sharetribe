@@ -1,83 +1,83 @@
-importer React depuis 'react';
-importer classNames depuis 'classnames';
+import React from 'react';
+import classNames from 'classnames';
 
-// Importer les configurations et les modules utilitaires
-importer { FormattedMessage } depuis '../../../../util/reactIntl';
-importer { LISTING_STATE_DRAFT } depuis '../../../../util/types';
-importer { types comme sdkTypes } depuis '../../../../util/sdkLoader';
+// Import configs and util modules
+import { FormattedMessage } from '../../../../util/reactIntl';
+import { LISTING_STATE_DRAFT } from '../../../../util/types';
+import { types as sdkTypes } from '../../../../util/sdkLoader';
 
-// Importer des composants partagés
-importer { H3, ListingLink } depuis '../../../../components';
+// Import shared components
+import { H3, ListingLink } from '../../../../components';
 
-// Importer des modules depuis ce répertoire
-importer EditListingDepositForm depuis './EditListingDepositForm';
-importer css depuis './EditListingDeposit.module.css';
+// Import modules from this directory
+import EditListingDepositForm from './EditListingDepositForm';
+import css from './EditListingDepositPanel.module.css';
 
-const getInitialValues ​​= paramètres => {
-  const { liste } = paramètres;
-  const { Deposit } = liste?.attributes.publicData || {};
+const getInitialValues = params => {
+  const { listing } = params;
+  const { Deposit } = listing?.attributes.publicData || {};
 
-  retourner { Deposit };
+  return { Deposit };
 };
 
-const EditListingDeposit = accessoires => {
+const EditListingDepositPanel = props => {
   const {
-    nom de classe,
+    className,
     rootClassName,
-    inscription,
-    désactivé,
-    prêt,
-    sur Soumettre,
-    soumettre le texte du bouton,
-    panneau mis à jour,
-    mise à jour en cours,
-    erreurs,
-  } = accessoires;
+    listing,
+    disabled,
+    ready,
+    onSubmit,
+    submitButtonText,
+    panelUpdated,
+    updateInProgress,
+    errors,
+  } = props;
 
   const classes = classNames(rootClassName || css.root, className);
-  const initialValues ​​= getInitialValues(props);
-  const isPublished = liste?.id && liste?.attributes?.state !== LISTING_STATE_DRAFT;
-  const unitType = liste?.attributes?.publicData?.unitType;
+  const initialValues = getInitialValues(props);
+  const isPublished = listing?.id && listing?.attributes?.state !== LISTING_STATE_DRAFT;
+  const unitType = listing?.attributes?.publicData?.unitType;
 
-  retour (
+  return (
     <div className={classes}>
       <H3 as="h1">
-        {est publié ? (
-          <Message formaté
-            id="EditListingDeposit.title"
-            valeurs={{ listingTitle: <ListingLink listing={listing} />, saut de ligne: <br /> }}
+        {isPublished ? (
+          <FormattedMessage
+            id="EditListingDepositPanel.title"
+            values={{ listingTitle: <ListingLink listing={listing} />, lineBreak: <br /> }}
           />
         ) : (
-          <Message formaté
-            id="EditListingDeposit.createListingTitle"
-            valeurs={{ lineBreak: <br /> }}
+          <FormattedMessage
+            id="EditListingDepositPanel.createListingTitle"
+            values={{ lineBreak: <br /> }}
           />
         )}
       </H3>
-      <Modifier le formulaire de fonctionnalités supplémentaires de la liste
+      <EditListingDepositForm
         className={css.form}
-        valeursinitiales={valeursinitiales}
-        onSubmit={valeurs => {
-          const { Deposit = '' } = valeurs;
+        initialValues={initialValues}
+        onSubmit={values => {
+          const { Deposit = '' } = values;
 
-          // Nouvelles valeurs pour les attributs de liste
-          const updateValues ​​= {
-            données publiques : {
-              fonctionnalités supplémentaires
+          // New values for listing attributes
+          const updateValues = {
+            publicData: {
+              Deposit
             }
           };
           onSubmit(updateValues);
         }}
         unitType={unitType}
         saveActionMsg={submitButtonText}
-        désactivé={désactivé}
-        prêt={prêt}
-        mis à jour={panelUpdated}
-        mise à jourEnProgression={mise à jourEnProgression}
-        fetchErrors={erreurs}
+        disabled={disabled}
+        ready={ready}
+        updated={panelUpdated}
+        updateInProgress={updateInProgress}
+        fetchErrors={errors}
       />
     </div>
   );
 };
 
-exportation par défaut EditListingDeposit ;
+export default EditListingDepositPanel;
