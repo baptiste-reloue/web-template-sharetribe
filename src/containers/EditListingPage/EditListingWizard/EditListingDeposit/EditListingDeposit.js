@@ -10,14 +10,14 @@ importer { types comme sdkTypes } depuis '../../../../util/sdkLoader';
 importer { H3, ListingLink } depuis '../../../../components';
 
 // Importer des modules depuis ce répertoire
-importer EditListingExtraFeaturesForm depuis './EditListingExtraFeaturesForm';
+importer EditListingDepositForm depuis './EditListingDepositForm';
 importer css depuis './EditListingDeposit.module.css';
 
 const getInitialValues ​​= paramètres => {
   const { liste } = paramètres;
-  const { extraFeatures } = liste?.attributes.publicData || {};
+  const { Deposit } = liste?.attributes.publicData || {};
 
-  retourner { extraFeatures };
+  retourner { Deposit };
 };
 
 const EditListingDeposit = accessoires => {
@@ -58,7 +58,7 @@ const EditListingDeposit = accessoires => {
         className={css.form}
         valeursinitiales={valeursinitiales}
         onSubmit={valeurs => {
-          const { extraFeatures = '' } = valeurs;
+          const { Deposit = '' } = valeurs;
 
           // Nouvelles valeurs pour les attributs de liste
           const updateValues ​​= {
