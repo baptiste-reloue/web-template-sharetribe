@@ -106,6 +106,50 @@ app.use(
   })
 );
 
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'", "https:", "data:"],
+        "script-src": [
+          "'self'",
+          "'unsafe-inline'",
+          "https://widget.intercom.io",
+          "https://js.intercomcdn.com",
+        ],
+        "connect-src": [
+          "'self'",
+          "https://api-iam.intercom.io",
+          "https://api-ping.intercom.io",
+          "https://nexus-websocket-a.intercom.io",
+          "wss://nexus-websocket-a.intercom.io",
+          "https://nexus-websocket-b.intercom.io",
+          "wss://nexus-websocket-b.intercom.io",
+        ],
+        "img-src": [
+          "'self'",
+          "data:",
+          "https://js.intercomcdn.com",
+          "https://static.intercomassets.com",
+        ],
+        "frame-src": [
+          "'self'",
+          "https://widget.intercom.io",
+        ],
+        "style-src": [
+          "'self'",
+          "'unsafe-inline'",
+          "https://js.intercomcdn.com",
+        ],
+      },
+    },
+    referrerPolicy: {
+      policy: 'origin',
+    },
+  })
+);
+
 if (cspEnabled) {
   app.use(generateCSPNonce);
 
