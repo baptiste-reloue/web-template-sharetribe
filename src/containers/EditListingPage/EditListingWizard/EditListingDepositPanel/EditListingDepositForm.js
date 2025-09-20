@@ -59,7 +59,7 @@ export const EditListingDepositFormComponent = props => (
             className={css.input}
             autoFocus={autoFocus}
             type="textarea"
-            label="Deposit"
+            label="Extra features"
             placeholder={intl.formatMessage({ id: 'EditListingDepositForm.DepositInputPlaceholder' })}
           />
 
