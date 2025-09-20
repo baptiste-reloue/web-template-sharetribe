@@ -1,8 +1,4 @@
 import React from 'react';
-//IntercomMessenger
-import { useSelector } from 'react-redux';
-import IntercomMessenger from './components/IntercomMessenger';
-
 import { any, string } from 'prop-types';
 
 import { HelmetProvider } from 'react-helmet-async';
@@ -105,29 +101,6 @@ const isTestEnv = process.env.NODE_ENV === 'test';
 const localeMessages = isTestEnv
   ? mapValues(defaultMessages, (val, key) => key)
   : addMissingTranslations(defaultMessages, messagesInLocale);
-
-export default function App({ children }) {
-// ⚠ adapte au nom exact du slice dans ton template
-const cu = useSelector(state => state.user.currentUser);
-
-const intercomUser = cu
-? {
-id: cu.id?.uuid,
-email: cu.attributes?.email,
-name: cu.attributes?.profile?.displayName || 'Utilisateur',
-createdAt: cu.attributes?.createdAt,
-// si Secure Mode activé, on passera aussi un user_hash ici
-user_hash: cu.attributes?.protectedData?.intercomUserHash
-}
-: null;
-
-return (
-<>
-{children}
-<IntercomMessenger user={intercomUser} />
-</>
-);
-}
 
 // For customized apps, this dynamic loading of locale files is not necessary.
 // It helps locale change from configDefault.js file or hosted configs, but customizers should probably
