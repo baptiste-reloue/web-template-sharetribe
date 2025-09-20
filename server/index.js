@@ -167,9 +167,6 @@ app.use(
       },
     },
     referrerPolicy: { policy: 'origin' },
-    crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: 'same-origin-allow-popus',
-    crossOriginResourcePolicy: false,
   })
 );
 
