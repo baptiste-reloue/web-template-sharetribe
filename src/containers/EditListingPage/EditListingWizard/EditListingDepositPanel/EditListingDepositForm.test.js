@@ -11,8 +11,8 @@ const { screen, userEvent } = testingLibrary;
 const noop = () => null;
 
 describe('EditListingDepositForm', () => {
-  test('Check that extra features can be given and submit button activates', () => {
-    const saveActionMsg = 'Save extra features';
+  test('Check that deposit can be given and submit button activates', () => {
+    const saveActionMsg = 'Save deposit';
     render(
       <EditListingDepositForm
         intl={fakeIntl}
