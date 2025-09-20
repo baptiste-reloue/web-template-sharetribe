@@ -244,7 +244,7 @@ includeCSSProperties(appConfig.branding, elem);
 // This gives good input for debugging issues on live environments, but with test it's not needed.
 const logLoadDataCalls = appSettings?.env !== 'test';
 
-// 🔽 Récupère l'utilisateur loggé depuis le store (côté client)
+// User logged in store (client siude)
 const cu = store.getState().user?.currentUser;
 const intercomUser = cu
 ? {
@@ -271,7 +271,7 @@ textComponent="span"
 <Routes logLoadDataCalls={logLoadDataCalls} />
 </BrowserRouter>
 
-{/* 🔽 Widget Intercom visible sur toutes les pages (client only) */}
+{/* Widget Intercom (client only) */}
 <IntercomMessenger user={intercomUser} />
 </HelmetProvider>
 </Provider>
