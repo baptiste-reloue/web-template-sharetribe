@@ -225,14 +225,14 @@ return <EnvironmentVariableWarning suspiciousEnvKey={suspiciousSECRETKey} />;
 }
 
 // Show MaintenanceMode if the mandatory configurations are not available
-//if (!appConfig.hasMandatoryConfigurations) {
-//return (
-//<MaintenanceModeError
-//locale={appConfig.localization.locale}
-//messages={{ ...localeMessages, ...hostedTranslations }}
-///>
-//);
-//}
+if (!appConfig.hasMandatoryConfigurations) {
+return (
+<MaintenanceModeError
+locale={appConfig.localization.locale}
+messages={{ ...localeMessages, ...hostedTranslations }}
+/>
+);
+}
 
 // Marketplace color and the color for <PrimaryButton> come from configs
 // If set, we need to create CSS Property and set it to DOM (documentElement is selected here)
