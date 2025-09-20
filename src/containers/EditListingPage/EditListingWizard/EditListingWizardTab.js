@@ -16,6 +16,7 @@ import EditListingLocationPanel from './EditListingLocationPanel/EditListingLoca
 import EditListingPhotosPanel from './EditListingPhotosPanel/EditListingPhotosPanel';
 import EditListingPricingPanel from './EditListingPricingPanel/EditListingPricingPanel';
 import EditListingPricingAndStockPanel from './EditListingPricingAndStockPanel/EditListingPricingAndStockPanel';
+import EditListingExtraFeaturesPanel from './EditListingExtraFeaturesPanel/EditListingExtraFeaturesPanel';
 import EditListingStylePanel from './EditListingStylePanel/EditListingStylePanel';
 
 import css from './EditListingWizardTab.module.css';
@@ -23,6 +24,7 @@ import css from './EditListingWizardTab.module.css';
 export const DETAILS = 'details';
 export const PRICING = 'pricing';
 export const PRICING_AND_STOCK = 'pricing-and-stock';
+export const EXTRAFEATURES = 'extra-features';
 export const DELIVERY = 'delivery';
 export const LOCATION = 'location';
 export const AVAILABILITY = 'availability';
@@ -258,12 +260,19 @@ const EditListingWizardTab = props => {
         />
       );
     }
-    case STYLE: {
+        case STYLE: {
       return (
         <EditListingStylePanel
           {...panelProps(STYLE)}
           listingImageConfig={config.layout.listingImage}
           images={images}
+        />
+      );
+    }
+    case EXTRAFEATURES: {
+      return (
+        <EditListingExtraFeaturesPanel
+          {...panelProps(EXTRAFEATURES)}
         />
       );
     }
