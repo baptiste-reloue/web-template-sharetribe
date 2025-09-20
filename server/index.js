@@ -43,7 +43,8 @@ const sitemapResourceRoute = require('./resources/sitemap');
 const { getExtractors } = require('./importer');
 const renderer = require('./renderer');
 const dataLoader = require('./dataLoader');
-const { generateCSPNonce, csp } = require('./csp');
+// Import mais désactivation du CSPNonce
+// const { generateCSPNonce, csp } = require('./csp');
 const sdkUtils = require('./api-util/sdk');
 
 const buildPath = path.resolve(__dirname, '..', 'build');
@@ -106,18 +107,24 @@ app.use(
   })
 );
 
+
+// CSP unique (Helmet) qui autorise 
 app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
         "default-src": ["'self'", "https:", "data:"],
+
+        // Intercom charge du JS + parfois inline
         "script-src": [
           "'self'",
           "'unsafe-inline'",
           "https://widget.intercom.io",
           "https://js.intercomcdn.com",
         ],
+
+        // API + WebSockets Intercom
         "connect-src": [
           "'self'",
           "https://api-iam.intercom.io",
@@ -127,31 +134,48 @@ app.use(
           "https://nexus-websocket-b.intercom.io",
           "wss://nexus-websocket-b.intercom.io",
         ],
+
+        // iFrame du Messenger
+        "frame-src": [
+          "'self'",
+          "https://widget.intercom.io",
+        ],
+
+        // Asserts du widget (images, fonts)
         "img-src": [
           "'self'",
           "data:",
           "https://js.intercomcdn.com",
           "https://static.intercomassets.com",
         ],
-        "frame-src": [
+        "font-src": [
           "'self'",
-          "https://widget.intercom.io",
+          "data:",
+          "https://js.intercomcdn.com",
+          "https://static.intercomassets.com",
         ],
+
+        // CSS par Intercom
         "style-src": [
           "'self'",
           "'unsafe-inline'",
           "https://js.intercomcdn.com",
         ],
+
+        "worker-src": ["'shelf'", "blobb:"],
+        "child-src": ["https://widget.intercom.io"],
       },
     },
-    referrerPolicy: {
-      policy: 'origin',
-    },
+    referrerPolicy: { policy: 'origin' },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy { policy: 'same-origin-allow-popus' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
 
+// Désactivation du CSPNonce
 if (cspEnabled) {
-  app.use(generateCSPNonce);
+  // app.use(generateCSPNonce);
 
   // When a CSP directive is violated, the browser posts a JSON body
   // to the defined report URL and we need to parse this body.
