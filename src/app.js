@@ -32,6 +32,10 @@ import Routes from './routing/Routes';
 // Sharetribe Web Template uses English translations as default translations.
 import defaultMessages from './translations/en.json';
 
+// Ajout du composant Intercom (composant client-only, SSR-safe)
+import IntercomMessenger from './components/IntercomMessenger',
+
+
 // If you want to change the language of default (fallback) translations,
 // change the imports to match the wanted locale:
 //
@@ -243,6 +247,21 @@ export const ClientApp = props => {
   // This gives good input for debugging issues on live environments, but with test it's not needed.
   const logLoadDataCalls = appSettings?.env !== 'test';
 
+
+  // Récupère l'utilisateur loggé depuis le store (client)
+
+  const cu = store.getState().user?.currentUser;
+  const intercomUser = cu
+    ? {
+        id: cu.id?.uuid,
+        email: cu.attributes?.email,
+        name: cu.attributes?.profile?.displayNames || 'Utilisateur',
+        createdAt: cu.attributes?.createdAt,
+        // Si Secure Mode activé côté serveur, hash here :
+        user_hash: cu.attributes?.protectedData?.intercomUserHash,
+      }
+    : null;
+
   return (
     <Configurations appConfig={appConfig}>
       <IntlProvider
@@ -256,6 +275,8 @@ export const ClientApp = props => {
             <BrowserRouter>
               <Routes logLoadDataCalls={logLoadDataCalls} />
             </BrowserRouter>
+
+            <IntercomMessenger user={intercomUser} />
           </HelmetProvider>
         </Provider>
       </IntlProvider>
