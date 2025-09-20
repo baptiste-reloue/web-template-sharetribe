@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+    import React, { useState, useEffect } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -369,6 +369,11 @@ export const ListingPageComponent = props => {
               listingFieldConfigs={listingConfig.listingFields}
               categoryConfiguration={config.categoryConfiguration}
               intl={intl}
+            />
+
+            <SectionTextMaybe
+            text={publicData.Deposit}
+            heading={intl.formatMessage({ id: 'ListingPage.DepositTitle' })}
             />
 
             <SectionMapMaybe
