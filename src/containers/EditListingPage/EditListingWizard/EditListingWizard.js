@@ -260,8 +260,6 @@ const tabCompleted = (tab, listing, config) => {
       return !!price;
     case PRICING_AND_STOCK:
       return !!price;
-    case DEPOSIT:
-      return !!deposit;
     case DELIVERY:
       return !!deliveryOptionPicked;
     case LOCATION:
@@ -272,6 +270,8 @@ const tabCompleted = (tab, listing, config) => {
       return images && images.length > 0;
     case STYLE:
       return !!cardStyle;
+    case DEPOSIT:
+      return !!deposit;
     default:
       return false;
   }
