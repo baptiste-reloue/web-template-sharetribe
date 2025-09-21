@@ -64,6 +64,10 @@ const getProcessName = pageData => {
 const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  // NEW: choix du mode de paiement (par défaut Stripe)
+  const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe' | 'cash'
+
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
@@ -106,6 +110,7 @@ const EnhancedCheckoutPage = props => {
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
+
   const processName = getProcessName(pageData);
   const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
@@ -164,42 +169,79 @@ const EnhancedCheckoutPage = props => {
       )
     : 'Checkout page is loading data';
 
-  return processName && isInquiryProcess ? (
-    <CheckoutPageWithInquiryProcess
-      config={config}
-      routeConfiguration={routeConfiguration}
-      intl={intl}
-      history={history}
-      processName={processName}
-      pageData={pageData}
-      listingTitle={listingTitle}
-      title={title}
-      onInquiryWithoutPayment={onInquiryWithoutPayment}
-      onSubmitCallback={onSubmitCallback}
-      showListingImage={showListingImage}
-      {...props}
-    />
-  ) : processName && !isInquiryProcess && !speculateTransactionInProgress ? (
-    <CheckoutPageWithPayment
-      config={config}
-      routeConfiguration={routeConfiguration}
-      intl={intl}
-      history={history}
-      processName={processName}
-      sessionStorageKey={STORAGE_KEY}
-      pageData={pageData}
-      setPageData={setPageData}
-      listingTitle={listingTitle}
-      title={title}
-      onSubmitCallback={onSubmitCallback}
-      showListingImage={showListingImage}
-      {...props}
-    />
-  ) : (
-    <Page title={title} scrollingDisabled={scrollingDisabled}>
-      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
-    </Page>
-  );
+  // === RENDU ===
+  if (processName && isInquiryProcess) {
+    return (
+      <CheckoutPageWithInquiryProcess
+        config={config}
+        routeConfiguration={routeConfiguration}
+        intl={intl}
+        history={history}
+        processName={processName}
+        pageData={pageData}
+        listingTitle={listingTitle}
+        title={title}
+        onInquiryWithoutPayment={onInquiryWithoutPayment}
+        onSubmitCallback={onSubmitCallback}
+        showListingImage={showListingImage}
+        {...props}
+      />
+    );
+  } else if (processName && !isInquiryProcess && !speculateTransactionInProgress) {
+    // Affiche le choix Stripe / Espèces ici, juste au-dessus de la page de paiement
+    return (
+      <>
+        <section style={{ margin: '1rem 0' }}>
+          <h3>Mode de paiement</h3>
+          <label style={{ marginRight: '1rem' }}>
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="stripe"
+              checked={paymentMethod === 'stripe'}
+              onChange={() => setPaymentMethod('stripe')}
+            />
+            <span style={{ marginLeft: 6 }}>Carte (Stripe)</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="cash"
+              checked={paymentMethod === 'cash'}
+              onChange={() => setPaymentMethod('cash')}
+            />
+            <span style={{ marginLeft: 6 }}>Espèces à la remise</span>
+          </label>
+        </section>
+
+        <CheckoutPageWithPayment
+          config={config}
+          routeConfiguration={routeConfiguration}
+          intl={intl}
+          history={history}
+          // IMPORTANT : si "cash", on force le nom de process côté page de paiement.
+          // CheckoutPageWithPayment utilisera cette prop pour choisir processAlias & transition.
+          processName={paymentMethod === 'cash' ? 'reloue-booking-cash' : processName}
+          sessionStorageKey={STORAGE_KEY}
+          pageData={pageData}
+          setPageData={setPageData}
+          listingTitle={listingTitle}
+          title={title}
+          onSubmitCallback={onSubmitCallback}
+          showListingImage={showListingImage}
+          paymentMethod={paymentMethod} // <-- on passe l'info au composant enfant
+          {...props}
+        />
+      </>
+    );
+  } else {
+    return (
+      <Page title={title} scrollingDisabled={scrollingDisabled}>
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+      </Page>
+    );
+  }
 };
 
 const mapStateToProps = state => {
