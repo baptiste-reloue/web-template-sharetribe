@@ -20,7 +20,7 @@ const defaultConfig = {
   // It should match one of the currencies listed in currencySettings.js
   // Note: The currency comes from localization asset nowadays by default.
   //       To use this built-in configuration, you need to remove the overwrite from configHelper.js (mergeCurrency func)
-  currency: 'USD',
+  currency: 'EUR',
 
   // Listing minimum price in currency sub units, e.g. cents.
   // By default, always try to take the value of listingMinimumPriceSubUnits from the transaction-size.json asset.
@@ -72,7 +72,7 @@ const defaultConfig = {
   // Note: The localization comes from localization asset nowadays by default.
   //       To use this built-in configuration, you need to remove the overwrite from configHelper.js (mergeLocalizations func)
   localization: {
-    locale: 'en-US',
+    locale: 'fr-FR',
     // First day of week
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/Locale/getWeekInfo#return_value
     // 1: Monday
@@ -113,11 +113,11 @@ const defaultConfig = {
   // Optional
   // Online presence of the same organization:
   // Facebook page is used in SEO schema (http://schema.org/Organization)
-  siteFacebookPage: null, // e.g. 'https://www.facebook.com/Sharetribe/',
+  siteFacebookPage: 'https://www.facebook.com/reloue.reloue/', // e.g. 'https://www.facebook.com/Sharetribe/',
   // Instagram page is used in SEO schema (http://schema.org/Organization)
-  siteInstagramPage: null, // e.g. 'https://www.instagram.com/sharetribe/',
+  siteInstagramPage: 'https://www.instagram.com/reloue.fr/', // e.g. 'https://www.instagram.com/sharetribe/',
   // Twitter handle is needed in meta tags (twitter:site). Start it with '@' character
-  siteTwitterHandle: null, // e.g. '@sharetribe',
+  // siteTwitterHandle: null, // e.g. '@sharetribe',
 
   // Optional
   // This creates meta tag for Google Search Console verification
@@ -133,10 +133,10 @@ const defaultConfig = {
   // Note: Google doesn't recognize this:
   // https://developers.google.com/search/docs/advanced/structured-data/logo#structured-data-type-definitions
   address: {
-    addressCountry: null, // 'FI',
-    addressRegion: null, // 'Helsinki',
-    postalCode: null, // '00130',
-    streetAddress: null, // 'Erottajankatu 19 B',
+    addressCountry: null, // 'FR',
+    addressRegion: null, // 'Lyon',
+    postalCode: null, // '69001',
+    streetAddress: null, // '3 Rue de la République',
   },
 };
 
