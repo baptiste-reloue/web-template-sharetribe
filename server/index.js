@@ -54,12 +54,14 @@ app.use(helmet({
     directives: {
       "default-src": ["'self'", "https:", "data:"],
 
-      // scripts Intercom
+      // scripts Intercom/GoogleMaps
       "script-src": [
         "'self'",
         "'unsafe-inline'",
         "https://widget.intercom.io",
         "https://js.intercomcdn.com",
+        "https://maps.googleapis.com",
+        "https://maps.gstatic.com",
       ],
 
       // APIs, hosted-configs, websockets, Stripe, Mapbox, etc.
@@ -73,6 +75,7 @@ app.use(helmet({
         "wss://nexus-websocket-a.intercom.io",
         "https://nexus-websocket-b.intercom.io",
         "wss://nexus-websocket-b.intercom.io",
+        "https://maps.googleapis.com",
       ],
 
       // iFrame du messenger
@@ -80,10 +83,10 @@ app.use(helmet({
 
       // images & fonts depuis n’importe quel CDN https + data:
       "img-src": ["'self'", "https:", "data:"],
-      "font-src": ["'self'", "https:", "data:"],
+      "font-src": ["'self'", "https:", "data:", "https://fonts.gstatic.com"],
 
       // CSS (incl. inline + CDNs)
-      "style-src": ["'self'", "'unsafe-inline'", "https:"],
+      "style-src": ["'self'", "'unsafe-inline'", "https:", "https://fonts.googleapis.com"],
 
       "worker-src": ["'self'", "blob:"],
     },
