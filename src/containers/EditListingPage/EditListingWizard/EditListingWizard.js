@@ -52,12 +52,12 @@ import {
 // Import modules from this directory
 import EditListingWizardTab, {
   DETAILS,
+  LOCATION,
   PRICING,
   PRICING_AND_STOCK,
-  DEPOSIT,
   DELIVERY,
-  LOCATION,
   AVAILABILITY,
+  DEPOSIT,
   PHOTOS,
   STYLE,
 } from './EditListingWizardTab';
@@ -72,7 +72,7 @@ import css from './EditListingWizard.module.css';
 const TABS_DETAILS_ONLY = [DETAILS];
 const TABS_PRODUCT = [DETAILS, PRICING_AND_STOCK, DELIVERY, PHOTOS, STYLE];
 const TABS_BOOKING = [DETAILS, LOCATION, PRICING, DEPOSIT, AVAILABILITY, PHOTOS, STYLE];
-const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, DEPOSIT, PHOTOS, STYLE];
+const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, PHOTOS, STYLE];
 const TABS_ALL = [...TABS_PRODUCT, ...TABS_BOOKING, ...TABS_INQUIRY];
 
 // Tabs are horizontal in small screens
