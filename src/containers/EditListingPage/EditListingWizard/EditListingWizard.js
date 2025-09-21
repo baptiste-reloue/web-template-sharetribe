@@ -231,6 +231,7 @@ const tabCompleted = (tab, listing, config) => {
     description,
     geolocation,
     price,
+    deposit,
     title,
     publicData,
     privateData,
