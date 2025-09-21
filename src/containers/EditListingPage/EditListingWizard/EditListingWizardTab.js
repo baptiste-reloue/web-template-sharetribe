@@ -216,13 +216,6 @@ const EditListingWizardTab = props => {
         />
       );
     }
-    case DEPOSIT: {
-      return (
-        <EditListingDepositPanel
-          {...panelProps(DEPOSIT)}
-        />
-      );
-    }
     case DELIVERY: {
       return (
         <EditListingDeliveryPanel {...panelProps(DELIVERY)} marketplaceCurrency={config.currency} />
@@ -274,6 +267,13 @@ const EditListingWizardTab = props => {
           {...panelProps(STYLE)}
           listingImageConfig={config.layout.listingImage}
           images={images}
+        />
+      );
+    }
+    case DEPOSIT: {
+      return (
+        <EditListingDepositPanel
+          {...panelProps(DEPOSIT)}
         />
       );
     }
