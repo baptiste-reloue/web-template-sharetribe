@@ -22,23 +22,24 @@ import EditListingStylePanel from './EditListingStylePanel/EditListingStylePanel
 import css from './EditListingWizardTab.module.css';
 
 export const DETAILS = 'details';
+export const LOCATION = 'location';
 export const PRICING = 'pricing';
 export const PRICING_AND_STOCK = 'pricing-and-stock';
-export const DEPOSIT = 'deposit';
 export const DELIVERY = 'delivery';
-export const LOCATION = 'location';
 export const AVAILABILITY = 'availability';
+export const DEPOSIT = 'deposit';
 export const PHOTOS = 'photos';
 export const STYLE = 'style';
 
 // EditListingWizardTab component supports these tabs
 export const SUPPORTED_TABS = [
   DETAILS,
+  LOCATION,
   PRICING,
   PRICING_AND_STOCK,
   DELIVERY,
-  LOCATION,
   AVAILABILITY,
+  DEPOSIT,
   PHOTOS,
   STYLE,
 ];
