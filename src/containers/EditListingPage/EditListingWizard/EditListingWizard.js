@@ -54,6 +54,7 @@ import EditListingWizardTab, {
   DETAILS,
   PRICING,
   PRICING_AND_STOCK,
+  DEPOSIT,
   DELIVERY,
   LOCATION,
   AVAILABILITY,
@@ -70,8 +71,8 @@ import css from './EditListingWizard.module.css';
 //         Details tab asks for "title" and is therefore the first tab in the wizard flow.
 const TABS_DETAILS_ONLY = [DETAILS];
 const TABS_PRODUCT = [DETAILS, PRICING_AND_STOCK, DELIVERY, PHOTOS, STYLE];
-const TABS_BOOKING = [DETAILS, LOCATION, PRICING, AVAILABILITY, PHOTOS, STYLE];
-const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, PHOTOS, STYLE];
+const TABS_BOOKING = [DETAILS, LOCATION, PRICING, DEPOSIT, AVAILABILITY, PHOTOS, STYLE];
+const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, DEPOSIT, PHOTOS, STYLE];
 const TABS_ALL = [...TABS_PRODUCT, ...TABS_BOOKING, ...TABS_INQUIRY];
 
 // Tabs are horizontal in small screens
@@ -135,6 +136,9 @@ const tabLabelAndSubmit = (intl, tab, isNewListingFlow, isPriceDisabled, process
   } else if (tab === PRICING_AND_STOCK) {
     labelKey = 'EditListingWizard.tabLabelPricingAndStock';
     submitButtonKey = `EditListingWizard.${processNameString}${newOrEdit}.savePricingAndStock`;
+  } else if (tab === DEPOSIT) {
+    labelKey = 'EditListingWizard.tabLabelDeposit';
+    submitButtonKey = `EditListingWizard.${processNameString}${newOrEdit}.saveDeposit`;
   } else if (tab === DELIVERY) {
     labelKey = 'EditListingWizard.tabLabelDelivery';
     submitButtonKey = `EditListingWizard.${processNameString}${newOrEdit}.saveDelivery`;
@@ -256,6 +260,8 @@ const tabCompleted = (tab, listing, config) => {
       return !!price;
     case PRICING_AND_STOCK:
       return !!price;
+    case DEPOSIT:
+      return !!deposit;
     case DELIVERY:
       return !!deliveryOptionPicked;
     case LOCATION:
