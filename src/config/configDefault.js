@@ -128,15 +128,21 @@ const defaultConfig = {
     googleSiteVerification: null, // Add google-site-verification token as a string
   },
 
+  //Define service Maps
+  map : {
+    provide: 'googleMaps',
+    googleMapsAPIKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
+  },
+  
   // Optional
   // Address information is used in SEO schema for Organization (http://schema.org/PostalAddress)
   // Note: Google doesn't recognize this:
   // https://developers.google.com/search/docs/advanced/structured-data/logo#structured-data-type-definitions
   address: {
-    addressCountry: null, // 'FR',
-    addressRegion: null, // 'Lyon',
-    postalCode: null, // '69001',
-    streetAddress: null, // '3 Rue de la République',
+    addressCountry: 'FR', // 'FR',
+    addressRegion: 'Lyon', // 'Lyon',
+    postalCode: '69001', // '69001',
+    streetAddress: '3 Rue de la République', // '3 Rue de la République',
   },
 };
 
