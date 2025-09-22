@@ -62,14 +62,11 @@ const redirectAfterDraftUpdate = (listingId, params, tab, marketplaceTabs, histo
     id: listingUUID,
   };
 
-  // Replace current "new" path to "draft" path.
-  // Browser's back button should lead to editing current draft instead of creating a new one.
   if (params.type === LISTING_PAGE_PARAM_TYPE_NEW) {
     const draftURI = createResourceLocatorString('EditListingPage', routes, currentPathParams, {});
     history.replace(draftURI);
   }
 
-  // Redirect to next tab
   const nextPathParams = pathParamsToNextTab(currentPathParams, tab, marketplaceTabs);
   const to = createResourceLocatorString('EditListingPage', routes, nextPathParams, {});
   history.push(to);
@@ -122,22 +119,10 @@ const EditListingWizardTab = props => {
 
   const currentListing = ensureListing(listing);
 
-  // New listing flow has automatic redirects to new tab on the wizard
-  // and the last panel calls publishListing API endpoint.
   const automaticRedirectsForNewListingFlow = (tab, listingId) => {
     if (tab !== marketplaceTabs[marketplaceTabs.length - 1]) {
-      // Create listing flow: smooth scrolling polyfill to scroll to correct tab
       handleCreateFlowTabScrolling(false);
-
-      // After successful saving of draft data, user should be redirected to next tab
-      redirectAfterDraftUpdate(
-        listingId,
-        params,
-        tab,
-        marketplaceTabs,
-        history,
-        routeConfiguration
-      );
+      redirectAfterDraftUpdate(listingId, params, tab, marketplaceTabs, history, routeConfiguration);
     } else {
       handlePublishListing(listingId);
     }
@@ -154,15 +139,13 @@ const EditListingWizardTab = props => {
 
     return onUpdateListingOrCreateListingDraft(tab, updateListingValues)
       .then(r => {
-        // In Availability tab, the submitted data (plan) is inside a modal
-        // We don't redirect provider immediately after plan is set
         if (isNewListingFlow && tab !== AVAILABILITY) {
           const listingId = r.data.data.id;
           automaticRedirectsForNewListingFlow(tab, listingId);
         }
       })
-      .catch(e => {
-        // No need for extra actions
+      .catch(() => {
+        // errors handled by panels
       });
   };
 
@@ -175,7 +158,6 @@ const EditListingWizardTab = props => {
       params,
       locationSearch,
       updateInProgress,
-      // newListingPublished and fetchInProgress are flags for the last wizard tab
       ready: newListingPublished,
       disabled: fetchInProgress,
       submitButtonText: tabSubmitButtonText,
@@ -187,9 +169,8 @@ const EditListingWizardTab = props => {
     };
   };
 
-  // TODO: add missing cases for supported tabs
   switch (tab) {
-    case DETAILS: {
+    case DETAILS:
       return (
         <EditListingDetailsPanel
           {...panelProps(DETAILS)}
@@ -197,8 +178,7 @@ const EditListingWizardTab = props => {
           config={config}
         />
       );
-    }
-    case PRICING_AND_STOCK: {
+    case PRICING_AND_STOCK:
       return (
         <EditListingPricingAndStockPanel
           {...panelProps(PRICING_AND_STOCK)}
@@ -206,8 +186,7 @@ const EditListingWizardTab = props => {
           listingMinimumPriceSubUnits={config.listingMinimumPriceSubUnits}
         />
       );
-    }
-    case PRICING: {
+    case PRICING:
       return (
         <EditListingPricingPanel
           {...panelProps(PRICING)}
@@ -215,23 +194,19 @@ const EditListingWizardTab = props => {
           listingMinimumPriceSubUnits={config.listingMinimumPriceSubUnits}
         />
       );
-    }
-    case DEPOSIT: {
+    case DEPOSIT:
       return (
         <EditListingDepositPanel
           {...panelProps(DEPOSIT)}
         />
       );
-    }
-    case DELIVERY: {
+    case DELIVERY:
       return (
         <EditListingDeliveryPanel {...panelProps(DELIVERY)} marketplaceCurrency={config.currency} />
       );
-    }
-    case LOCATION: {
+    case LOCATION:
       return <EditListingLocationPanel {...panelProps(LOCATION)} />;
-    }
-    case AVAILABILITY: {
+    case AVAILABILITY:
       return (
         <EditListingAvailabilityPanel
           allExceptions={allExceptions}
@@ -256,8 +231,7 @@ const EditListingWizardTab = props => {
           {...panelProps(AVAILABILITY)}
         />
       );
-    }
-    case PHOTOS: {
+    case PHOTOS:
       return (
         <EditListingPhotosPanel
           {...panelProps(PHOTOS)}
@@ -267,8 +241,7 @@ const EditListingWizardTab = props => {
           onRemoveImage={onRemoveImage}
         />
       );
-    }
-    case STYLE: {
+    case STYLE:
       return (
         <EditListingStylePanel
           {...panelProps(STYLE)}
@@ -276,7 +249,6 @@ const EditListingWizardTab = props => {
           images={images}
         />
       );
-    }
     default:
       return null;
   }
