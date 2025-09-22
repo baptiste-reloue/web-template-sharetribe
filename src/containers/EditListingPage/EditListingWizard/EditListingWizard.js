@@ -52,12 +52,12 @@ import {
 // Import modules from this directory
 import EditListingWizardTab, {
   DETAILS,
-  LOCATION,
   PRICING,
   PRICING_AND_STOCK,
-  DELIVERY,
-  AVAILABILITY,
   DEPOSIT,
+  DELIVERY,
+  LOCATION,
+  AVAILABILITY,
   PHOTOS,
   STYLE,
 } from './EditListingWizardTab';
@@ -72,7 +72,7 @@ import css from './EditListingWizard.module.css';
 const TABS_DETAILS_ONLY = [DETAILS];
 const TABS_PRODUCT = [DETAILS, PRICING_AND_STOCK, DELIVERY, PHOTOS, STYLE];
 const TABS_BOOKING = [DETAILS, LOCATION, PRICING, DEPOSIT, AVAILABILITY, PHOTOS, STYLE];
-const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, PHOTOS, STYLE];
+const TABS_INQUIRY = [DETAILS, LOCATION, PRICING, DEPOSIT, PHOTOS, STYLE];
 const TABS_ALL = [...TABS_PRODUCT, ...TABS_BOOKING, ...TABS_INQUIRY];
 
 // Tabs are horizontal in small screens
@@ -231,6 +231,7 @@ const tabCompleted = (tab, listing, config) => {
     description,
     geolocation,
     price,
+    deposit,
     title,
     publicData,
     privateData,
@@ -260,6 +261,8 @@ const tabCompleted = (tab, listing, config) => {
       return !!price;
     case PRICING_AND_STOCK:
       return !!price;
+    case DEPOSIT:
+      return !!deposit;
     case DELIVERY:
       return !!deliveryOptionPicked;
     case LOCATION:
@@ -270,8 +273,6 @@ const tabCompleted = (tab, listing, config) => {
       return images && images.length > 0;
     case STYLE:
       return !!cardStyle;
-    case DEPOSIT:
-      return !!deposit;
     default:
       return false;
   }
