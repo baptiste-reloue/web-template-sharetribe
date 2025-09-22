@@ -231,7 +231,6 @@ const tabCompleted = (tab, listing, config) => {
     description,
     geolocation,
     price,
-    deposit,
     title,
     publicData,
     privateData,
@@ -246,6 +245,7 @@ const tabCompleted = (tab, listing, config) => {
     cardStyle,
   } = publicData || {};
   const deliveryOptionPicked = publicData && (shippingEnabled || pickupEnabled);
+  const depositNote = publicData?.depositNote;
 
   switch (tab) {
     case DETAILS:
@@ -262,7 +262,7 @@ const tabCompleted = (tab, listing, config) => {
     case PRICING_AND_STOCK:
       return !!price;
     case DEPOSIT:
-      return !!deposit;
+      return !!(typeof depositNote === 'string' && depositNote.trim().length > 0);
     case DELIVERY:
       return !!deliveryOptionPicked;
     case LOCATION:
