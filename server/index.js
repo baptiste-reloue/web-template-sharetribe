@@ -62,6 +62,7 @@ app.use(helmet({
         "https://js.intercomcdn.com",
         "https://maps.googleapis.com",
         "https://maps.gstatic.com",
+        "https://js.stripe.com",
       ],
 
       // APIs, hosted-configs, websockets, Stripe, Mapbox, etc.
@@ -76,10 +77,12 @@ app.use(helmet({
         "https://nexus-websocket-b.intercom.io",
         "wss://nexus-websocket-b.intercom.io",
         "https://maps.googleapis.com",
+        "https://api.stripe.com",
+        "https://hooks.stripe.com",
       ],
 
       // iFrame du messenger
-      "frame-src": ["'self'", "https://widget.intercom.io"],
+      "frame-src": ["'self'", "https://widget.intercom.io", "https://js.stripe.com", "https://hooks.stripe.com"],
 
       // images & fonts depuis n’importe quel CDN https + data:
       "img-src": ["'self'", "https:", "data:"],
