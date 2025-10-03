@@ -58,12 +58,12 @@ const EditListingDepositPanel = props => {
         className={css.form}
         initialValues={initialValues}
         onSubmit={values => {
-          const { Deposit = '' } = values;
+          const { depositNote = '' } = values;
 
           // New values for listing attributes
           const updateValues = {
             publicData: {
-              Deposit
+              depositNote
             }
           };
           onSubmit(updateValues);
