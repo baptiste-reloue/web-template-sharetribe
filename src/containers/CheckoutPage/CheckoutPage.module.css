@@ -458,3 +458,38 @@
 .incompatibleCurrency {
   margin-top: 20px;
 }
+
+
+.paymentMethodSection {
+  background: var(--colorWhite);
+  border: 1px solid var(--colorGrey100);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 12px 0 24px;
+}
+
+.sectionTitle {
+  margin: 0 0 8px;
+}
+
+.radioRow {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.paymentHelp {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--colorGrey700);
+}
+
+@media (max-width: 768px) {
+  .radioRow {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+}
