@@ -230,21 +230,28 @@ const tabCompleted = (tab, listing, config) => {
       );
     case PRICING:
       return !!price;
+      
     case PRICING_AND_STOCK:
       return !!price;
+      
     case DEPOSIT:
-      // Step Deposit non bloquant (toujours considéré "complété")
-      return true;
+      return !!(typeof depositNote === 'string' && depositNote.trim().length > 0);
+      
     case DELIVERY:
       return !!deliveryOptionPicked;
+      
     case LOCATION:
       return !!(geolocation && publicData?.location?.address);
+      
     case AVAILABILITY:
       return !!availabilityPlan;
+      
     case PHOTOS:
       return images && images.length > 0;
+      
     case STYLE:
       return !!cardStyle;
+      
     default:
       return false;
   }
