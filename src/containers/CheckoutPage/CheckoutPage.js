@@ -188,32 +188,8 @@ const EnhancedCheckoutPage = props => {
       />
     );
   } else if (processName && !isInquiryProcess && !speculateTransactionInProgress) {
-    // Affiche le choix Stripe / Espèces ici, juste au-dessus de la page de paiement
     return (
       <>
-        <section style={{ margin: '1rem 0' }}>
-          <h3>Mode de paiement</h3>
-          <label style={{ marginRight: '1rem' }}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="stripe"
-              checked={paymentMethod === 'stripe'}
-              onChange={() => setPaymentMethod('stripe')}
-            />
-            <span style={{ marginLeft: 6 }}>Carte (Stripe)</span>
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="cash"
-              checked={paymentMethod === 'cash'}
-              onChange={() => setPaymentMethod('cash')}
-            />
-            <span style={{ marginLeft: 6 }}>Espèces à la remise</span>
-          </label>
-        </section>
 
         <CheckoutPageWithPayment
           config={config}
@@ -230,7 +206,8 @@ const EnhancedCheckoutPage = props => {
           title={title}
           onSubmitCallback={onSubmitCallback}
           showListingImage={showListingImage}
-          paymentMethod={paymentMethod} // <-- on passe l'info au composant enfant
+          paymentMethod={paymentMethod}
+          onChangePaymentMethod={setPaymentMethod}
           {...props}
         />
       </>
