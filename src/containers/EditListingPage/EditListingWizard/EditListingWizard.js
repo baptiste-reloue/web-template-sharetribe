@@ -235,7 +235,7 @@ const tabCompleted = (tab, listing, config) => {
       return !!price;
       
     case DEPOSIT:
-      return !!publicData?.depositNote;
+      return !!publicData?.deposit;
       
     case DELIVERY:
       return !!deliveryOptionPicked;
