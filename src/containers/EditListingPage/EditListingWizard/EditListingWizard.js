@@ -235,7 +235,7 @@ const tabCompleted = (tab, listing, config) => {
       return !!price;
       
     case DEPOSIT:
-      return typeof publicData?.deposit === 'string' && publicData.deposit.trim()length > 0;
+      return typeof publicData?.deposit === 'string' && publicData.deposit.trim().length > 0;
       
     case DELIVERY:
       return !!deliveryOptionPicked;
