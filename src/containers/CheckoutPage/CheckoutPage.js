@@ -65,7 +65,7 @@ const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  // NEW: choix du mode de paiement (par défaut Stripe)
+  // Choix du mode de paiement (par défaut Stripe)
   const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe' | 'cash'
 
   const config = useConfiguration();
@@ -82,6 +82,7 @@ const EnhancedCheckoutPage = props => {
       fetchSpeculatedTransaction,
       fetchStripeCustomer,
     } = props;
+
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
     setPageData(data || {});
@@ -89,8 +90,8 @@ const EnhancedCheckoutPage = props => {
 
     // Do not fetch extra data if user is not active (E.g. they are in pending-approval state.)
     if (isUserAuthorized(currentUser)) {
-      // This is for processes using payments with Stripe integration
-      if (getProcessName(data) !== INQUIRY_PROCESS_NAME) {
+      // Charger Stripe UNIQUEMENT si on n'est pas en inquiry ET si le mode n'est pas "cash"
+      if (getProcessName(data) !== INQUIRY_PROCESS_NAME && paymentMethod !== 'cash') {
         // Fetch StripeCustomer and speculateTransition for transactions that include Stripe payments
         loadInitialDataForStripePayments({
           pageData: data || {},
@@ -100,7 +101,8 @@ const EnhancedCheckoutPage = props => {
         });
       }
     }
-  }, []);
+    // Re-évalue si l’utilisateur bascule Stripe <-> Espèces
+  }, [props, history, config, paymentMethod]);
 
   const {
     currentUser,
@@ -123,10 +125,7 @@ const EnhancedCheckoutPage = props => {
   // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
-    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      // - or when they are sending the order (if the operator removed transaction rights
-      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
   // Redirect back to ListingPage if data is missing.
@@ -190,7 +189,6 @@ const EnhancedCheckoutPage = props => {
   } else if (processName && !isInquiryProcess && !speculateTransactionInProgress) {
     return (
       <>
-
         <CheckoutPageWithPayment
           config={config}
           routeConfiguration={routeConfiguration}
