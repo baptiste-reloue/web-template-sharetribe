@@ -340,7 +340,7 @@
   "EditListingWizard.default-booking.new.savePricing": "Next",
   "EditListingWizard.default-booking.new.saveDeposit": "Next",
   "EditListingWizard.edit.saveDeposit": "Save changes",
-  "ListingPage.DepositTitle": "Extra features",
+  "ListingPage.depositTitle": "Deposit",
   "EditListingStyleForm.helpText": "Decide how your listing will look like in search results.",
   "EditListingStyleForm.preview": "Preview",
   "EditListingStyleForm.publishListingFailed": "Publishing a new listing failed.",
