@@ -372,8 +372,8 @@ export const ListingPageComponent = props => {
             />
 
             <SectionTextMaybe
-            text={publicData.Deposit}
-            heading={intl.formatMessage({ id: 'ListingPage.DepositTitle' })}
+            text={publicData.deposit}
+            heading={intl.formatMessage({ id: 'ListingPage.depositTitle' })}
             />
 
             <SectionMapMaybe
