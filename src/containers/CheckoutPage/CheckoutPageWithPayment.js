@@ -596,4 +596,4 @@ export const CheckoutPageWithPayment = props => {
   );
 };
 
-export default CheckoutPageWithPayment;
+export default CheckoutPageWithPayment
