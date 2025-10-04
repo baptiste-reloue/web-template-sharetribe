@@ -400,6 +400,11 @@ export const ListingPageComponent = props => {
               intl={intl}
             />
 
+            <SectionTextMaybe
+            text={publicData.deposit}
+            heading={intl.formatMessage({ id: 'ListingPage.depositTitle' })}
+            />
+              
             <SectionMapMaybe
               geolocation={geolocation}
               publicData={publicData}
