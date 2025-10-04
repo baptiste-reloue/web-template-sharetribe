@@ -54,12 +54,12 @@ export const EditListingDepositFormComponent = props => (
             </p>
           ) : null}
           <FieldTextInput
-            id={`${formId}depositNote`}
-            name="depositNote"
+            id={`${formId}deposit`}
+            name="deposit"
             className={css.input}
             autoFocus={autoFocus}
             type="textarea"
-            label="Votre fonctionnement de caution"
+            label="Fonctionnement pour le dépôt de caution"
             placeholder={intl.formatMessage({ id: 'EditListingDepositForm.DepositInputPlaceholder' })}
           />
 
