@@ -15,9 +15,9 @@ import css from './EditListingDepositPanel.module.css';
 
 const getInitialValues = params => {
   const { listing } = params;
-  const { Deposit } = listing?.attributes.publicData || {};
+  const { deposit } = listing?.attributes.publicData || {};
 
-  return { Deposit };
+  return { deposit };
 };
 
 const EditListingDepositPanel = props => {
@@ -58,12 +58,12 @@ const EditListingDepositPanel = props => {
         className={css.form}
         initialValues={initialValues}
         onSubmit={values => {
-          const { depositNote = '' } = values;
+          const { deposit = '' } = values;
 
           // New values for listing attributes
           const updateValues = {
             publicData: {
-              depositNote
+              deposit
             }
           };
           onSubmit(updateValues);
