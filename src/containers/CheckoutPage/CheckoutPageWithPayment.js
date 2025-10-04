@@ -19,6 +19,7 @@ import {
   Page,
   PrimaryButton,
   FieldRadioButton,
+  FieldTextInput,
 } from '../../components';
 
 import {
@@ -62,9 +63,7 @@ const paymentFlow = (selectedPaymentMethod, saveAfterOnetimePayment) => {
 const capitalizeString = s => `${s.charAt(0).toUpperCase()}${s.substr(1)}`;
 
 const prefixPriceVariantProperties = priceVariant => {
-  if (!priceVariant) {
-    return {};
-  }
+  if (!priceVariant) return {};
   const entries = Object.entries(priceVariant).map(([key, value]) => {
     return [`priceVariant${capitalizeString(key)}`, value];
   });
@@ -74,13 +73,13 @@ const prefixPriceVariantProperties = priceVariant => {
 const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
   const quantityMaybe = quantity ? { quantity } : {};
-  0;
   const seats = pageData.orderData?.seats;
   const seatsMaybe = seats ? { seats } : {};
   const deliveryMethod = pageData.orderData?.deliveryMethod;
   const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
   const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
 
+  // price variant data for fixed duration bookings
   const priceVariantName = pageData.orderData?.priceVariantName;
   const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
   const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
@@ -123,7 +122,6 @@ const fetchSpeculatedTransactionIfNeeded = (orderParams, pageData, fetchSpeculat
 
   if (shouldFetchSpeculatedTransaction) {
     const processAlias = pageData.listing.attributes.publicData?.transactionProcessAlias;
-    the;
     const transactionId = tx ? tx.id : null;
     const isInquiryInPaymentProcess =
       tx?.attributes?.lastTransition === process.transitions.INQUIRE;
@@ -161,6 +159,136 @@ export const loadInitialDataForStripePayments = ({
 const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
 const INITIAL_TRANSITION_CASH = 'transition/request';
 
+/** --- Composants UI --- **/
+
+// Sélecteur du mode de paiement
+const PaymentMethodSelector = ({ value, onChange }) => (
+  <div className={css.paymentMethodSection}>
+    <H3 as="h2" className={css.sectionTitle}>
+      <FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Mode de paiement" />
+    </H3>
+    <div className={css.radioRow}>
+      <FieldRadioButton
+        id="pm-stripe"
+        name="paymentMethod"
+        value="stripe"
+        label="Carte (Stripe)"
+        checked={value === 'stripe'}
+        onChange={() => onChange('stripe')}
+      />
+      <FieldRadioButton
+        id="pm-cash"
+        name="paymentMethod"
+        value="cash"
+        label="Espèces à la remise"
+        checked={value === 'cash'}
+        onChange={() => onChange('cash')}
+      />
+    </div>
+    <p className={css.paymentHelp}>
+      {value === 'cash'
+        ? 'Vous règlerez en espèces lors de la remise. Aucun prélèvement en ligne.'
+        : "Paiement sécurisé par Stripe. Vos informations de carte ne sont jamais stockées par RELOUE."}
+    </p>
+  </div>
+);
+
+// Formulaire simplifié des coordonnées de facturation (pour CASH)
+const BillingDetailsForm = ({ initial, onSubmit, inProgress }) => {
+  const [values, setValues] = useState({
+    name: initial?.name || '',
+    email: initial?.email || '',
+    addressLine1: initial?.addressLine1 || '',
+    city: initial?.city || '',
+    postalCode: initial?.postalCode || '',
+    country: initial?.country || '',
+  });
+
+  const onChange = (key, val) => setValues(v => ({ ...v, [key]: val }));
+
+  const canSubmit =
+    values.name &&
+    values.email &&
+    values.addressLine1 &&
+    values.city &&
+    values.postalCode &&
+    values.country;
+
+  return (
+    <div className={css.cashBox}>
+      <H4 className={css.sectionTitle}>Coordonnées de facturation</H4>
+      <div className={css.formGrid}>
+        <FieldTextInput
+          id="bd-name"
+          name="bd-name"
+          type="text"
+          label="Nom complet"
+          value={values.name}
+          onChange={e => onChange('name', e.target.value)}
+          required
+        />
+        <FieldTextInput
+          id="bd-email"
+          name="bd-email"
+          type="email"
+          label="Email"
+          value={values.email}
+          onChange={e => onChange('email', e.target.value)}
+          required
+        />
+        <FieldTextInput
+          id="bd-address"
+          name="bd-address"
+          type="text"
+          label="Adresse"
+          value={values.addressLine1}
+          onChange={e => onChange('addressLine1', e.target.value)}
+          required
+        />
+        <FieldTextInput
+          id="bd-city"
+          name="bd-city"
+          type="text"
+          label="Ville"
+          value={values.city}
+          onChange={e => onChange('city', e.target.value)}
+          required
+        />
+        <FieldTextInput
+          id="bd-postal"
+          name="bd-postal"
+          type="text"
+          label="Code postal"
+          value={values.postalCode}
+          onChange={e => onChange('postalCode', e.target.value)}
+          required
+        />
+        <FieldTextInput
+          id="bd-country"
+          name="bd-country"
+          type="text"
+          label="Pays"
+          placeholder="FR"
+          value={values.country}
+          onChange={e => onChange('country', e.target.value)}
+          required
+        />
+      </div>
+
+      <PrimaryButton
+        className={css.submitButton}
+        type="button"
+        onClick={() => onSubmit(values)}
+        inProgress={inProgress}
+        disabled={inProgress || !canSubmit}
+      >
+        {inProgress ? 'Envoi…' : 'Demander en espèces'}
+      </PrimaryButton>
+    </div>
+  );
+};
+
+/** --- Logique paiement Stripe --- **/
 const handleSubmitStripe = (values, process, props, stripe, submitting, setSubmitting) => {
   if (submitting) return;
   setSubmitting(true);
@@ -275,38 +403,7 @@ const onStripeInitialized = (stripe, process, props) => {
   }
 };
 
-// Sélecteur du mode de paiement
-const PaymentMethodSelector = ({ value, onChange }) => (
-  <div className={css.paymentMethodSection}>
-    <H3 as="h2" className={css.sectionTitle}>
-      <FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Mode de paiement" />
-    </H3>
-    <div className={css.radioRow}>
-      <FieldRadioButton
-        id="pm-stripe"
-        name="paymentMethod"
-        value="stripe"
-        label="Carte (Stripe)"
-        checked={value === 'stripe'}
-        onChange={() => onChange('stripe')}
-      />
-      <FieldRadioButton
-        id="pm-cash"
-        name="paymentMethod"
-        value="cash"
-        label="Espèces à la remise"
-        checked={value === 'cash'}
-        onChange={() => onChange('cash')}
-      />
-    </div>
-    <p className={css.paymentHelp}>
-      {value === 'cash'
-        ? 'Vous règlerez en espèces lors de la remise. Aucun prélèvement en ligne.'
-        : "Paiement sécurisé par Stripe. Vos informations de carte ne sont jamais stockées par RELOUE."}
-    </p>
-  </div>
-);
-
+/** --- Page --- **/
 export const CheckoutPageWithPayment = props => {
   const [submitting, setSubmitting] = useState(false);
   const [stripe, setStripe] = useState(null);
@@ -444,7 +541,8 @@ export const CheckoutPageWithPayment = props => {
     );
   }
 
-  const handleSubmitCash = async () => {
+  // Soumission CASH (initiate + stockage billingDetails)
+  const handleSubmitCash = async billingValues => {
     if (submitting) return;
     try {
       setSubmitting(true);
@@ -456,6 +554,7 @@ export const CheckoutPageWithPayment = props => {
       orderParams.protectedData = {
         ...(orderParams.protectedData || {}),
         paymentMethod: 'cash',
+        billingDetails: billingValues,
       };
 
       const res = await props.onInitiateOrder(
@@ -466,10 +565,10 @@ export const CheckoutPageWithPayment = props => {
         true
       );
 
-      const tx = res?.payload?.data || res?.data || res;
+      const createdTx = res?.payload?.data || res?.data || res;
 
       const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
-        id: tx.id.uuid,
+        id: createdTx.id.uuid,
       });
 
       setSubmitting(false);
@@ -502,6 +601,7 @@ export const CheckoutPageWithPayment = props => {
             </H4>
           </div>
 
+          {/* Récap / lieu / tarif mobile */}
           <MobileOrderBreakdown
             speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
             breakdown={breakdown}
@@ -515,27 +615,16 @@ export const CheckoutPageWithPayment = props => {
             {errorMessages.retrievePaymentIntentErrorMessage}
             {errorMessages.paymentExpiredMessage}
 
-            <PaymentMethodSelector
-              value={paymentMethod}
-              onChange={onChangePaymentMethod}
-            />
+            {/* ⬇️ Choix du mode de paiement – placé après le “Lieu de l’objet” */}
+            <PaymentMethodSelector value={paymentMethod} onChange={onChangePaymentMethod} />
 
             {showPaymentForm ? (
               isCash ? (
-                <div className={css.cashBox}>
-                  <p className={css.cashInfo}>
-                    <strong>Mode de paiement :</strong> Espèces à la remise de l’objet.
-                  </p>
-                  <PrimaryButton
-                    className={css.submitButton}
-                    type="button"
-                    onClick={handleSubmitCash}
-                    inProgress={submitting}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Envoi…' : 'Demander en espèces'}
-                  </PrimaryButton>
-                </div>
+                <BillingDetailsForm
+                  initial={{ name: userName, email: currentUser?.attributes?.email }}
+                  onSubmit={handleSubmitCash}
+                  inProgress={submitting}
+                />
               ) : (
                 <StripePaymentForm
                   className={css.paymentForm}
@@ -596,4 +685,4 @@ export const CheckoutPageWithPayment = props => {
   );
 };
 
-export default CheckoutPageWithPayment
+export default CheckoutPageWithPayment;
