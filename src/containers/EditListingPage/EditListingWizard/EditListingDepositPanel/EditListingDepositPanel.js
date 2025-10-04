@@ -58,15 +58,10 @@ const EditListingDepositPanel = props => {
         className={css.form}
         initialValues={initialValues}
         onSubmit={values => {
-          const { deposit = '' } = values;
-
-          // New values for listing attributes
-          const updateValues = {
-            publicData: {
-              deposit
-            }
-          };
-          onSubmit(updateValues);
+          const deposit = (values?.deposit || '').trim();
+          const updateValues = { publicData: {deposit } };
+          // Renvoyer la promesse pour que le wizard attende la réponse SDK
+          return onSubmit(updateValues);
         }}
         unitType={unitType}
         saveActionMsg={submitButtonText}
