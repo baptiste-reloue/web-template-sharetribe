@@ -459,37 +459,31 @@
   margin-top: 20px;
 }
 
-
 .paymentMethodSection {
-  background: var(--colorWhite);
-  border: 1px solid var(--colorGrey100);
+  margin: 1.25rem 0 0.5rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  padding: 16px 20px;
-  margin: 12px 0 24px;
+  background: #fafafa;
 }
+.sectionTitle { margin: 0 0 .5rem; }
+.radioRow { display: flex; gap: 1.5rem; margin-bottom: .5rem; }
+.paymentHelp { font-size: .92rem; color: #555; }
 
-.sectionTitle {
-  margin: 0 0 8px;
+.cashBox {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px dashed #c9a900;
+  border-radius: 8px;
+  background: #fff9e6;
 }
-
-.radioRow {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 8px 0 4px;
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .75rem;
+  margin-bottom: 1rem;
 }
-
-.paymentHelp {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: var(--colorGrey700);
+@media (min-width: 720px) {
+  .formGrid { grid-template-columns: 1fr 1fr; }
 }
-
-@media (max-width: 768px) {
-  .radioRow {
-    flex-direction: column;
-    gap: 12px;
-    align-items: flex-start;
-  }
-}
+.submitButton { max-width: 320px; }
