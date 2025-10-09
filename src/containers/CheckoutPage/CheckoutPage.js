@@ -64,6 +64,10 @@ const getProcessName = pageData => {
 const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  // 👉 Choix du mode de paiement (par défaut Stripe)
+  const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe' | 'cash'
+
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
@@ -83,11 +87,9 @@ const EnhancedCheckoutPage = props => {
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // Do not fetch extra data if user is not active (E.g. they are in pending-approval state.)
+    // Ne charge pas Stripe si l'utilisateur a choisi "cash"
     if (isUserAuthorized(currentUser)) {
-      // This is for processes using payments with Stripe integration
-      if (getProcessName(data) !== INQUIRY_PROCESS_NAME) {
-        // Fetch StripeCustomer and speculateTransition for transactions that include Stripe payments
+      if (getProcessName(data) !== INQUIRY_PROCESS_NAME && paymentMethod !== 'cash') {
         loadInitialDataForStripePayments({
           pageData: data || {},
           fetchSpeculatedTransaction,
@@ -96,7 +98,8 @@ const EnhancedCheckoutPage = props => {
         });
       }
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethod]);
 
   const {
     currentUser,
@@ -106,6 +109,7 @@ const EnhancedCheckoutPage = props => {
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
+
   const processName = getProcessName(pageData);
   const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
@@ -118,10 +122,7 @@ const EnhancedCheckoutPage = props => {
   // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
-    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      // - or when they are sending the order (if the operator removed transaction rights
-      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
   // Redirect back to ListingPage if data is missing.
@@ -180,21 +181,34 @@ const EnhancedCheckoutPage = props => {
       {...props}
     />
   ) : processName && !isInquiryProcess && !speculateTransactionInProgress ? (
-    <CheckoutPageWithPayment
-      config={config}
-      routeConfiguration={routeConfiguration}
-      intl={intl}
-      history={history}
-      processName={processName}
-      sessionStorageKey={STORAGE_KEY}
-      pageData={pageData}
-      setPageData={setPageData}
-      listingTitle={listingTitle}
-      title={title}
-      onSubmitCallback={onSubmitCallback}
-      showListingImage={showListingImage}
-      {...props}
-    />
+    (() => {
+      // Alias du process selon le choix (cash override l’alias du listing)
+      const selectedProcessAlias =
+        paymentMethod === 'cash'
+          ? 'reloue-booking-cash/release-1'
+          : pageData?.listing?.attributes?.publicData?.transactionProcessAlias;
+
+      return (
+        <CheckoutPageWithPayment
+          config={config}
+          routeConfiguration={routeConfiguration}
+          intl={intl}
+          history={history}
+          processName={paymentMethod === 'cash' ? 'reloue-booking-cash' : processName}
+          sessionStorageKey={STORAGE_KEY}
+          pageData={pageData}
+          setPageData={setPageData}
+          listingTitle={listingTitle}
+          title={title}
+          onSubmitCallback={onSubmitCallback}
+          showListingImage={showListingImage}
+          paymentMethod={paymentMethod}
+          onChangePaymentMethod={setPaymentMethod}
+          selectedProcessAlias={selectedProcessAlias}
+          {...props}
+        />
+      );
+    })()
   ) : (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
       <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
