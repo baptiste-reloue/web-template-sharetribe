@@ -1,17 +1,25 @@
 import React, { useState } from 'react';
 
 // Import contexts and util modules
-import { FormattedMessage, intlShape } from '../../util/reactIntl';
+import { FormattedMessage } from '../../util/reactIntl';
 import { pathByRouteName } from '../../util/routes';
 import { isValidCurrencyForTransactionProcess } from '../../util/fieldHelpers.js';
-import { propTypes } from '../../util/types';
 import { ensureTransaction } from '../../util/data';
 import { createSlug } from '../../util/urlHelpers';
 import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
 import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
 
 // Import shared components
-import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
+import {
+  H3,
+  H4,
+  NamedLink,
+  OrderBreakdown,
+  Page,
+  PrimaryButton,
+  FieldRadioButton,
+  FieldTextInput,
+} from '../../components';
 
 import {
   bookingDatesMaybe,
@@ -35,66 +43,34 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// Stripe PaymentIntent statuses, where user actions are already completed
-// https://stripe.com/docs/payments/payment-intents/status
+// Stripe PaymentIntent statuses
 const STRIPE_PI_USER_ACTIONS_DONE_STATUSES = ['processing', 'requires_capture', 'succeeded'];
 
-// Payment charge options
-const ONETIME_PAYMENT = 'ONETIME_PAYMENT';
-const PAY_AND_SAVE_FOR_LATER_USE = 'PAY_AND_SAVE_FOR_LATER_USE';
-const USE_SAVED_CARD = 'USE_SAVED_CARD';
+// Cash process constants
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+const CASH_INITIAL_TRANSITION = 'transition/request';
 
-const paymentFlow = (selectedPaymentMethod, saveAfterOnetimePayment) => {
-  // Payment mode could be 'replaceCard', but without explicit saveAfterOnetimePayment flag,
-  // we'll handle it as one-time payment
-  return selectedPaymentMethod === 'defaultCard'
-    ? USE_SAVED_CARD
+// Helpers
+const paymentFlow = (selectedPaymentMethod, saveAfterOnetimePayment) =>
+  selectedPaymentMethod === 'defaultCard'
+    ? 'USE_SAVED_CARD'
     : saveAfterOnetimePayment
-    ? PAY_AND_SAVE_FOR_LATER_USE
-    : ONETIME_PAYMENT;
-};
+    ? 'PAY_AND_SAVE_FOR_LATER_USE'
+    : 'ONETIME_PAYMENT';
 
 const capitalizeString = s => `${s.charAt(0).toUpperCase()}${s.substr(1)}`;
 
-/**
- * Prefix the properties of the chosen price variant as first level properties for the protected data of the transaction
- *
- * @example
- * const priceVariant = {
- *   name: 'something',
- * }
- *
- * will be returned as:
- * const priceVariant = {
- *   priceVariantName: 'something',
- * }
- *
- * @param {Object} priceVariant - The price variant object
- * @returns {Object} The price variant object with the properties prefixed with priceVariant*
- */
+// Prefix priceVariant props into protected data
 const prefixPriceVariantProperties = priceVariant => {
-  if (!priceVariant) {
-    return {};
-  }
-
-  const entries = Object.entries(priceVariant).map(([key, value]) => {
-    return [`priceVariant${capitalizeString(key)}`, value];
-  });
+  if (!priceVariant) return {};
+  const entries = Object.entries(priceVariant).map(([key, value]) => [
+    `priceVariant${capitalizeString(key)}`,
+    value,
+  ]);
   return Object.fromEntries(entries);
 };
 
-/**
- * Construct orderParams object using pageData from session storage, shipping details, and optional payment params.
- * Note: This is used for both speculate transition and real transition
- *       - Speculate transition is called, when the the component is mounted. It's used to test if the data can go through the API validation
- *       - Real transition is made, when the user submits the StripePaymentForm.
- *
- * @param {Object} pageData data that's saved to session storage.
- * @param {Object} shippingDetails shipping address if applicable.
- * @param {Object} optionalPaymentParams (E.g. paymentMethod or setupPaymentMethodForSaving)
- * @param {Object} config app-wide configs. This contains hosted configs too.
- * @returns orderParams.
- */
+// Build order params for first transition
 const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
   const quantityMaybe = quantity ? { quantity } : {};
@@ -104,7 +80,6 @@ const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config
   const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
   const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
 
-  // price variant data for fixed duration bookings
   const priceVariantName = pageData.orderData?.priceVariantName;
   const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
   const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
@@ -119,16 +94,7 @@ const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config
     },
   };
 
-  // Note: Avoid misinterpreting the following logic as allowing arbitrary mixing of `quantity` and `seats`.
-  // You can only pass either quantity OR seats and units to the orderParams object
-  // Quantity represents the total booked units for the line item (e.g. days, hours).
-  // When quantity is not passed, we pass seats and units.
-  // If `bookingDatesMaybe` is provided, it determines `units`, and `seats` defaults to 1
-  // (implying quantity = units)
-
-  // These are the order parameters for the first payment-related transition
-  // which is either initiate-transition or initiate-transition-after-enquiry
-  const orderParams = {
+  return {
     listingId: pageData?.listing?.id,
     ...deliveryMethodMaybe,
     ...quantityMaybe,
@@ -138,7 +104,6 @@ const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config
     ...protectedDataMaybe,
     ...optionalPaymentParams,
   };
-  return orderParams;
 };
 
 const fetchSpeculatedTransactionIfNeeded = (orderParams, pageData, fetchSpeculatedTransaction) => {
@@ -149,7 +114,6 @@ const fetchSpeculatedTransactionIfNeeded = (orderParams, pageData, fetchSpeculat
     pageDataListing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
   const process = processName ? getProcess(processName) : null;
 
-  // If transaction has passed payment-pending state, speculated tx is not needed.
   const shouldFetchSpeculatedTransaction =
     !!pageData?.listing?.id &&
     !!pageData.orderData &&
@@ -177,47 +141,22 @@ const fetchSpeculatedTransactionIfNeeded = (orderParams, pageData, fetchSpeculat
   }
 };
 
-/**
- * Load initial data for the page
- *
- * Since the data for the checkout is not passed in the URL (there
- * might be lots of options in the future), we must pass in the data
- * some other way. Currently the ListingPage sets the initial data
- * for the CheckoutPage's Redux store.
- *
- * For some cases (e.g. a refresh in the CheckoutPage), the Redux
- * store is empty. To handle that case, we store the received data
- * to window.sessionStorage and read it from there if no props from
- * the store exist.
- *
- * This function also sets of fetching the speculative transaction
- * based on this initial data.
- */
 export const loadInitialDataForStripePayments = ({
   pageData,
   fetchSpeculatedTransaction,
   fetchStripeCustomer,
   config,
 }) => {
-  // Fetch currentUser with stripeCustomer entity
-  // Note: since there's need for data loading in "componentWillMount" function,
-  //       this is added here instead of loadData static function.
   fetchStripeCustomer();
-
-  // Fetch speculated transaction for showing price in order breakdown
-  // NOTE: if unit type is line-item/item, quantity needs to be added.
-  // The way to pass it to checkout page is through pageData.orderData
   const shippingDetails = {};
   const optionalPaymentParams = {};
   const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
-
   fetchSpeculatedTransactionIfNeeded(orderParams, pageData, fetchSpeculatedTransaction);
 };
 
-const handleSubmit = (values, process, props, stripe, submitting, setSubmitting) => {
-  if (submitting) {
-    return;
-  }
+// Submit with Stripe
+const handleSubmitStripe = (values, process, props, stripe, submitting, setSubmitting) => {
+  if (submitting) return;
   setSubmitting(true);
 
   const {
@@ -239,6 +178,7 @@ const handleSubmit = (values, process, props, stripe, submitting, setSubmitting)
     setPageData,
     sessionStorageKey,
   } = props;
+
   const { card, message, paymentMethod: selectedPaymentMethod, formValues } = values;
   const { saveAfterOnetimePayment: saveAfterOnetimePaymentRaw } = formValues;
 
@@ -250,8 +190,6 @@ const handleSubmit = (values, process, props, stripe, submitting, setSubmitting)
     ? currentUser?.stripeCustomer?.defaultPaymentMethod?.attributes?.stripePaymentMethodId
     : null;
 
-  // If paymentIntent status is not waiting user action,
-  // confirmCardPayment has been called previously.
   const hasPaymentIntentUserActionsDone =
     paymentIntent && STRIPE_PI_USER_ACTIONS_DONE_STATUSES.includes(paymentIntent.status);
 
@@ -273,27 +211,21 @@ const handleSubmit = (values, process, props, stripe, submitting, setSubmitting)
     onSavePaymentMethod,
     sessionStorageKey,
     stripeCustomer: currentUser?.stripeCustomer,
-    isPaymentFlowUseSavedCard: selectedPaymentFlow === USE_SAVED_CARD,
-    isPaymentFlowPayAndSaveCard: selectedPaymentFlow === PAY_AND_SAVE_FOR_LATER_USE,
+    isPaymentFlowUseSavedCard: selectedPaymentFlow === 'USE_SAVED_CARD',
+    isPaymentFlowPayAndSaveCard: selectedPaymentFlow === 'PAY_AND_SAVE_FOR_LATER_USE',
     setPageData,
   };
 
   const shippingDetails = getShippingDetailsMaybe(formValues);
-  // Note: optionalPaymentParams contains Stripe paymentMethod,
-  // but that can also be passed on Step 2
-  // stripe.confirmCardPayment(stripe, { payment_method: stripePaymentMethodId })
   const optionalPaymentParams =
-    selectedPaymentFlow === USE_SAVED_CARD && hasDefaultPaymentMethodSaved
+    selectedPaymentFlow === 'USE_SAVED_CARD' && hasDefaultPaymentMethodSaved
       ? { paymentMethod: stripePaymentMethodId }
-      : selectedPaymentFlow === PAY_AND_SAVE_FOR_LATER_USE
+      : selectedPaymentFlow === 'PAY_AND_SAVE_FOR_LATER_USE'
       ? { setupPaymentMethodForSaving: true }
       : {};
 
-  // These are the order parameters for the first payment-related transition
-  // which is either initiate-transition or initiate-transition-after-enquiry
   const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
 
-  // There are multiple XHR calls that needs to be made against Stripe API and Sharetribe Marketplace API on checkout with payments
   processCheckoutWithPayment(orderParams, requestPaymentParams)
     .then(response => {
       const { orderId, messageSuccess, paymentMethodSaved } = response;
@@ -318,71 +250,51 @@ const handleSubmit = (values, process, props, stripe, submitting, setSubmitting)
     });
 };
 
-const onStripeInitialized = (stripe, process, props) => {
-  const { paymentIntent, onRetrievePaymentIntent, pageData } = props;
-  const tx = pageData?.transaction || null;
+// Submit with cash
+const handleSubmitCash = async (billingValues, props, setSubmitting) => {
+  const {
+    routeConfiguration,
+    history,
+    pageData,
+    config,
+    onInitiateOrder,
+    onSubmitCallback,
+  } = props;
 
-  // We need to get up to date PI, if payment is pending but it's not expired.
-  const shouldFetchPaymentIntent =
-    stripe &&
-    !paymentIntent &&
-    tx?.id &&
-    process?.getState(tx) === process?.states.PENDING_PAYMENT &&
-    !hasPaymentExpired(tx, process);
+  setSubmitting(true);
 
-  if (shouldFetchPaymentIntent) {
-    const { stripePaymentIntentClientSecret } =
-      tx.attributes.protectedData?.stripePaymentIntents?.default || {};
+  try {
+    const orderParams = getOrderParams(pageData, {}, {}, config);
+    orderParams.protectedData = {
+      ...(orderParams.protectedData || {}),
+      paymentMethod: 'cash',
+      billingDetails: billingValues,
+    };
 
-    // Fetch up to date PaymentIntent from Stripe
-    onRetrievePaymentIntent({ stripe, stripePaymentIntentClientSecret });
+    const res = await onInitiateOrder(
+      orderParams,
+      CASH_PROCESS_ALIAS,
+      null,
+      CASH_INITIAL_TRANSITION,
+      true
+    );
+
+    const createdTx = res?.payload?.data || res?.data || res;
+    const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
+      id: createdTx.id.uuid,
+    });
+
+    setSubmitting(false);
+    onSubmitCallback && onSubmitCallback();
+    history.push(orderDetailsPath);
+  } catch (e) {
+    console.error(e);
+    setSubmitting(false);
   }
 };
 
-/**
- * A component that renders the checkout page with payment.
- *
- * @component
- * @param {Object} props
- * @param {boolean} props.scrollingDisabled - Whether the page should scroll
- * @param {string} props.speculateTransactionError - The error message for the speculate transaction
- * @param {propTypes.transaction} props.speculatedTransaction - The speculated transaction
- * @param {boolean} props.isClockInSync - Whether the clock is in sync
- * @param {string} props.initiateOrderError - The error message for the initiate order
- * @param {string} props.confirmPaymentError - The error message for the confirm payment
- * @param {intlShape} props.intl - The intl object
- * @param {propTypes.currentUser} props.currentUser - The current user
- * @param {string} props.confirmCardPaymentError - The error message for the confirm card payment
- * @param {propTypes.paymentIntent} props.paymentIntent - The Stripe's payment intent
- * @param {boolean} props.stripeCustomerFetched - Whether the stripe customer has been fetched
- * @param {Object} props.pageData - The page data
- * @param {propTypes.listing} props.pageData.listing - The listing entity
- * @param {boolean} props.showListingImage - A boolean indicating whether images are enabled with this listing type
- * @param {propTypes.transaction} props.pageData.transaction - The transaction entity
- * @param {Object} props.pageData.orderData - The order data
- * @param {string} props.processName - The process name
- * @param {string} props.listingTitle - The listing title
- * @param {string} props.title - The title
- * @param {Function} props.onInitiateOrder - The function to initiate the order
- * @param {Function} props.onConfirmCardPayment - The function to confirm the card payment
- * @param {Function} props.onConfirmPayment - The function to confirm the payment after Stripe call is made
- * @param {Function} props.onSendMessage - The function to send a message
- * @param {Function} props.onSavePaymentMethod - The function to save the payment method for later use
- * @param {Function} props.onSubmitCallback - The function to submit the callback
- * @param {propTypes.error} props.initiateOrderError - The error message for the initiate order
- * @param {propTypes.error} props.confirmPaymentError - The error message for the confirm payment
- * @param {propTypes.error} props.confirmCardPaymentError - The error message for the confirm card payment
- * @param {propTypes.paymentIntent} props.paymentIntent - The Stripe's payment intent
- * @param {boolean} props.stripeCustomerFetched - Whether the stripe customer has been fetched
- * @param {Object} props.config - The config
- * @param {Object} props.routeConfiguration - The route configuration
- * @param {Object} props.history - The history object
- * @param {Object} props.history.push - The push state function of the history object
- * @returns {JSX.Element}
- */
 export const CheckoutPageWithPayment = props => {
   const [submitting, setSubmitting] = useState(false);
-  // Initialized stripe library is saved to state - if it's needed at some point here too.
   const [stripe, setStripe] = useState(null);
 
   const {
@@ -392,7 +304,6 @@ export const CheckoutPageWithPayment = props => {
     isClockInSync,
     initiateOrderError,
     confirmPaymentError,
-    intl,
     currentUser,
     confirmCardPaymentError,
     showListingImage,
@@ -404,14 +315,14 @@ export const CheckoutPageWithPayment = props => {
     listingTitle,
     title,
     config,
+    paymentMethod = 'stripe',
+    onChangePaymentMethod,
+    routeConfiguration,
+    history,
   } = props;
 
-  // Since the listing data is already given from the ListingPage
-  // and stored to handle refreshes, it might not have the possible
-  // deleted or closed information in it. If the transaction
-  // initiate or the speculative initiate fail due to the listing
-  // being deleted or closed, we should dig the information from the
-  // errors and not the listing data.
+  const isCash = paymentMethod === 'cash';
+
   const listingNotFound =
     isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
     isTransactionInitiateListingNotFoundError(initiateOrderError);
@@ -420,20 +331,17 @@ export const CheckoutPageWithPayment = props => {
   const existingTransaction = ensureTransaction(transaction);
   const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
 
-  // If existing transaction has line-items, it has gone through one of the request-payment transitions.
-  // Otherwise, we try to rely on speculatedTransaction for order breakdown data.
   const tx =
     existingTransaction?.attributes?.lineItems?.length > 0
       ? existingTransaction
       : speculatedTransaction;
+
   const timeZone = listing?.attributes?.availabilityPlan?.timezone;
   const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
   const priceVariantName = tx.attributes.protectedData?.priceVariantName;
 
   const txBookingMaybe = tx?.booking?.id ? { booking: tx.booking, timeZone } : {};
 
-  // Show breakdown only when (speculated?) transaction is loaded
-  // (i.e. it has an id and lineItems)
   const breakdown =
     tx.id && tx.attributes.lineItems?.length > 0 ? (
       <OrderBreakdown
@@ -447,14 +355,12 @@ export const CheckoutPageWithPayment = props => {
     ) : null;
 
   const totalPrice =
-    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
+    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, props.intl) : null;
 
   const process = processName ? getProcess(processName) : null;
   const transitions = process.transitions;
   const isPaymentExpired = hasPaymentExpired(existingTransaction, process, isClockInSync);
 
-  // Allow showing page when currentUser is still being downloaded,
-  // but show payment form only when user info is loaded.
   const showPaymentForm = !!(
     currentUser &&
     !listingNotFound &&
@@ -488,40 +394,31 @@ export const CheckoutPageWithPayment = props => {
   const hasInquireTransition = txTransitions.find(tr => tr.transition === transitions.INQUIRE);
   const showInitialMessageInput = !hasInquireTransition;
 
-  // Get first and last name of the current user and use it in the StripePaymentForm to autofill the name field
   const userName = currentUser?.attributes?.profile
     ? `${currentUser.attributes.profile.firstName} ${currentUser.attributes.profile.lastName}`
     : null;
 
-  // If paymentIntent status is not waiting user action,
-  // confirmCardPayment has been called previously.
   const hasPaymentIntentUserActionsDone =
     paymentIntent && STRIPE_PI_USER_ACTIONS_DONE_STATUSES.includes(paymentIntent.status);
-
-  // If your marketplace works mostly in one country you can use initial values to select country automatically
-  // e.g. {country: 'FI'}
 
   const initialValuesForStripePayment = { name: userName, recipientName: userName };
   const askShippingDetails =
     orderData?.deliveryMethod === 'shipping' &&
     !hasTransactionPassedPendingPayment(existingTransaction, process);
 
-  // Check if the listing currency is compatible with Stripe for the specified transaction process.
-  // This function validates the currency against the transaction process requirements and
-  // ensures it is supported by Stripe, as indicated by the 'stripe' parameter.
-  // If using a transaction process without any stripe actions, leave out the 'stripe' parameter.
-  const isStripeCompatibleCurrency = isValidCurrencyForTransactionProcess(
-    transactionProcessAlias,
-    listing.attributes.price.currency,
-    'stripe'
-  );
+  // Compat Stripe – ignorée en mode cash
+  const isStripeCompatibleCurrency =
+    isCash ||
+    isValidCurrencyForTransactionProcess(
+      transactionProcessAlias,
+      listing.attributes.price.currency,
+      'stripe'
+    );
 
-  // Render an error message if the listing is using a non Stripe supported currency
-  // and is using a transaction process with Stripe actions (default-booking or default-purchase)
   if (!isStripeCompatibleCurrency) {
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
-        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+        <CustomTopbar intl={props.intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <section className={css.incompatibleCurrency}>
             <H4 as="h1" className={css.heading}>
@@ -533,9 +430,71 @@ export const CheckoutPageWithPayment = props => {
     );
   }
 
+  // UI: sélecteur cash / stripe (placé au-dessus du formulaire, donc après le bloc "Lieu")
+  const PaymentMethodSelector = () => (
+    <div className={css.paymentMethodSection}>
+      <H4 className={css.sectionTitle}>Mode de paiement</H4>
+      <div className={css.radioRow}>
+        <FieldRadioButton
+          id="pm-stripe"
+          name="paymentMethod"
+          value="stripe"
+          label="Carte (Stripe)"
+          checked={paymentMethod === 'stripe'}
+          onChange={() => onChangePaymentMethod && onChangePaymentMethod('stripe')}
+        />
+        <FieldRadioButton
+          id="pm-cash"
+          name="paymentMethod"
+          value="cash"
+          label="Espèces à la remise"
+          checked={paymentMethod === 'cash'}
+          onChange={() => onChangePaymentMethod && onChangePaymentMethod('cash')}
+        />
+      </div>
+    </div>
+  );
+
+  const BillingDetailsForm = ({ onSubmit }) => {
+    const [v, setV] = useState({
+      name: userName || '',
+      email: currentUser?.attributes?.email || '',
+      addressLine1: '',
+      city: '',
+      postalCode: '',
+      country: '',
+    });
+    const onChange = (k, val) => setV(prev => ({ ...prev, [k]: val }));
+    const ok = v.name && v.email && v.addressLine1 && v.city && v.postalCode && v.country;
+
+    return (
+      <div className={css.cashBox}>
+        <H4 className={css.sectionTitle}>Coordonnées de facturation</H4>
+        <div className={css.formGrid}>
+          <FieldTextInput id="bd-name" label="Nom complet" value={v.name} onChange={e => onChange('name', e.target.value)} required />
+          <FieldTextInput id="bd-email" type="email" label="Email" value={v.email} onChange={e => onChange('email', e.target.value)} required />
+          <FieldTextInput id="bd-address" label="Adresse" value={v.addressLine1} onChange={e => onChange('addressLine1', e.target.value)} required />
+          <FieldTextInput id="bd-city" label="Ville" value={v.city} onChange={e => onChange('city', e.target.value)} required />
+          <FieldTextInput id="bd-postal" label="Code postal" value={v.postalCode} onChange={e => onChange('postalCode', e.target.value)} required />
+          <FieldTextInput id="bd-country" label="Pays" value={v.country} onChange={e => onChange('country', e.target.value)} required />
+        </div>
+
+        <PrimaryButton
+          className={css.submitButton}
+          type="button"
+          onClick={() => onSubmit(v)}
+          inProgress={submitting}
+          disabled={submitting || !ok}
+        >
+          {submitting ? 'Envoi…' : 'Demander en espèces'}
+        </PrimaryButton>
+      </div>
+    );
+  };
+
   return (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
-      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+      <CustomTopbar intl={props.intl} linkToExternalSite={config?.topbar?.logoLink} />
       <div className={css.contentContainer}>
         <MobileListingImage
           listingTitle={listingTitle}
@@ -546,18 +505,18 @@ export const CheckoutPageWithPayment = props => {
         />
         <div className={css.orderFormContainer}>
           <div className={css.headingContainer}>
-            <H3 as="h1" className={css.heading}>
-              {title}
-            </H3>
+            <H3 as="h1" className={css.heading}>{title}</H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
               <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
           </div>
+
           <MobileOrderBreakdown
             speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
             breakdown={breakdown}
             priceVariantName={priceVariantName}
           />
+
           <section className={css.paymentContainer}>
             {errorMessages.initiateOrderErrorMessage}
             {errorMessages.listingNotFoundErrorMessage}
@@ -565,42 +524,61 @@ export const CheckoutPageWithPayment = props => {
             {errorMessages.retrievePaymentIntentErrorMessage}
             {errorMessages.paymentExpiredMessage}
 
+            <PaymentMethodSelector />
+
             {showPaymentForm ? (
-              <StripePaymentForm
-                className={css.paymentForm}
-                onSubmit={values =>
-                  handleSubmit(values, process, props, stripe, submitting, setSubmitting)
-                }
-                inProgress={submitting}
-                formId="CheckoutPagePaymentForm"
-                authorDisplayName={listing?.author?.attributes?.profile?.displayName}
-                showInitialMessageInput={showInitialMessageInput}
-                initialValues={initialValuesForStripePayment}
-                initiateOrderError={initiateOrderError}
-                confirmCardPaymentError={confirmCardPaymentError}
-                confirmPaymentError={confirmPaymentError}
-                hasHandledCardPayment={hasPaymentIntentUserActionsDone}
-                loadingData={!stripeCustomerFetched}
-                defaultPaymentMethod={
-                  hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
-                    ? currentUser.stripeCustomer.defaultPaymentMethod
-                    : null
-                }
-                paymentIntent={paymentIntent}
-                onStripeInitialized={stripe => {
-                  setStripe(stripe);
-                  return onStripeInitialized(stripe, process, props);
-                }}
-                askShippingDetails={askShippingDetails}
-                showPickUplocation={orderData?.deliveryMethod === 'pickup'}
-                listingLocation={listing?.attributes?.publicData?.location}
-                totalPrice={totalPrice}
-                locale={config.localization.locale}
-                stripePublishableKey={config.stripe.publishableKey}
-                marketplaceName={config.marketplaceName}
-                isBooking={isBookingProcessAlias(transactionProcessAlias)}
-                isFuzzyLocation={config.maps.fuzzy.enabled}
-              />
+              isCash ? (
+                <BillingDetailsForm
+                  onSubmit={vals => handleSubmitCash(vals, { ...props, routeConfiguration, history }, setSubmitting)}
+                />
+              ) : (
+                <StripePaymentForm
+                  className={css.paymentForm}
+                  onSubmit={values =>
+                    handleSubmitStripe(values, process, props, stripe, submitting, setSubmitting)
+                  }
+                  inProgress={submitting}
+                  formId="CheckoutPagePaymentForm"
+                  authorDisplayName={listing?.author?.attributes?.profile?.displayName}
+                  showInitialMessageInput={showInitialMessageInput}
+                  initialValues={initialValuesForStripePayment}
+                  initiateOrderError={initiateOrderError}
+                  confirmCardPaymentError={confirmCardPaymentError}
+                  confirmPaymentError={confirmPaymentError}
+                  hasHandledCardPayment={hasPaymentIntentUserActionsDone}
+                  loadingData={!stripeCustomerFetched}
+                  defaultPaymentMethod={
+                    hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
+                      ? currentUser.stripeCustomer.defaultPaymentMethod
+                      : null
+                  }
+                  paymentIntent={paymentIntent}
+                  onStripeInitialized={stripeObj => {
+                    setStripe(stripeObj);
+                    // Récupération du PaymentIntent si besoin
+                    if (
+                      stripeObj &&
+                      !paymentIntent &&
+                      existingTransaction?.id &&
+                      process?.getState(existingTransaction) === process?.states.PENDING_PAYMENT &&
+                      !hasPaymentExpired(existingTransaction, process)
+                    ) {
+                      const { stripePaymentIntentClientSecret } =
+                        existingTransaction.attributes.protectedData?.stripePaymentIntents?.default || {};
+                      props.onRetrievePaymentIntent({ stripe: stripeObj, stripePaymentIntentClientSecret });
+                    }
+                  }}
+                  askShippingDetails={askShippingDetails}
+                  showPickUplocation={orderData?.deliveryMethod === 'pickup'}
+                  listingLocation={listing?.attributes?.publicData?.location}
+                  totalPrice={totalPrice}
+                  locale={config.localization.locale}
+                  stripePublishableKey={config.stripe.publishableKey}
+                  marketplaceName={config.marketplaceName}
+                  isBooking={isBookingProcessAlias(transactionProcessAlias)}
+                  isFuzzyLocation={config.maps.fuzzy.enabled}
+                />
+              )
             ) : null}
           </section>
         </div>
@@ -617,7 +595,7 @@ export const CheckoutPageWithPayment = props => {
           processName={processName}
           breakdown={breakdown}
           showListingImage={showListingImage}
-          intl={intl}
+          intl={props.intl}
         />
       </div>
     </Page>
