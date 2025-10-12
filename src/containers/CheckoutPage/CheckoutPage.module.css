@@ -458,3 +458,41 @@
 .incompatibleCurrency {
   margin-top: 20px;
 }
+
+/* === Payment method selector & Cash form === */
+.paymentMethodSection {
+  margin: 12px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--colorGrey100);
+  border-radius: 8px;
+  background: #fafafa;
+}
+.sectionTitle {
+  margin: 0 0 8px;
+}
+.radioRow {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.cashBox {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px dashed #d4b106; /* jaune discret */
+  border-radius: 8px;
+  background: #fffbea;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (--viewportMedium) {
+  .formGrid { grid-template-columns: 1fr 1fr; }
+}
+.submitButton {
+  max-width: 320px;
+}
