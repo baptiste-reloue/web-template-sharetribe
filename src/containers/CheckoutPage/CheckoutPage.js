@@ -64,6 +64,10 @@ const getProcessName = pageData => {
 const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  // Choix local du mode de paiement (par défaut Stripe). La UI vit dans CheckoutPageWithPayment.
+  const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe' | 'cash'
+
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
@@ -83,11 +87,10 @@ const EnhancedCheckoutPage = props => {
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // Do not fetch extra data if user is not active (E.g. they are in pending-approval state.)
+    // On ne précharge Stripe que si l'utilisateur est autorisé ET qu'on n'est pas sur le process "inquiry"
+    // (le choix cash/stripe est géré plus bas – on laisse Stripe dispo côté client, c'est plus simple)
     if (isUserAuthorized(currentUser)) {
-      // This is for processes using payments with Stripe integration
       if (getProcessName(data) !== INQUIRY_PROCESS_NAME) {
-        // Fetch StripeCustomer and speculateTransition for transactions that include Stripe payments
         loadInitialDataForStripePayments({
           pageData: data || {},
           fetchSpeculatedTransaction,
@@ -96,7 +99,7 @@ const EnhancedCheckoutPage = props => {
         });
       }
     }
-  }, []);
+  }, []); // ne dépend pas du choix cash/stripe
 
   const {
     currentUser,
@@ -106,6 +109,7 @@ const EnhancedCheckoutPage = props => {
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
+
   const processName = getProcessName(pageData);
   const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
@@ -118,21 +122,15 @@ const EnhancedCheckoutPage = props => {
   // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
-    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      // - or when they are sending the order (if the operator removed transaction rights
-      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
-  // Redirect back to ListingPage if data is missing.
-  // Redirection must happen before any data format error is thrown (e.g. wrong currency)
   if (shouldRedirect) {
     // eslint-disable-next-line no-console
     console.error('Missing or invalid data for checkout, redirecting back to listing page.', {
       listing,
     });
     return <NamedRedirect name="ListingPage" params={params} />;
-    // Redirect to NoAccessPage if access rights are missing
   } else if (shouldRedirectUnathorizedUser) {
     return (
       <NamedRedirect
@@ -193,6 +191,9 @@ const EnhancedCheckoutPage = props => {
       title={title}
       onSubmitCallback={onSubmitCallback}
       showListingImage={showListingImage}
+      // 👇 Props pour le choix cash/stripe
+      paymentMethod={paymentMethod}
+      onChangePaymentMethod={setPaymentMethod}
       {...props}
     />
   ) : (
