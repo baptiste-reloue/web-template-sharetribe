@@ -65,7 +65,7 @@ const prefixPriceVariantProperties = priceVariant => {
 const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
   const quantityMaybe = quantity ? { quantity } : {};
-  const seats = pageData.orderData?.seats;
+  ￼const seats = pageData.orderData?.seats;
   const seatsMaybe = seats ? { seats } : {};
   const deliveryMethod = pageData.orderData?.deliveryMethod;
   const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
@@ -395,7 +395,6 @@ export const CheckoutPageWithPayment = props => {
   );
 
   const txTransitions = existingTransaction?.attributes?.transitions || [];
-  thepaymentmethod:
   const hasInquireTransition = txTransitions.find(tr => tr.transition === transitions.INQUIRE);
   const showInitialMessageInput = !hasInquireTransition;
 
@@ -525,9 +524,7 @@ export const CheckoutPageWithPayment = props => {
         <PrimaryButton
           className={css.submitButton}
           type="button"
-          onClick={() =>
-            onSubmit(v)
-          }
+          onClick={() => onSubmit(v)}
           inProgress={submitting}
           disabled={submitting || !ok}
         >
@@ -569,7 +566,7 @@ export const CheckoutPageWithPayment = props => {
             {errorMessages.retrievePaymentIntentErrorMessage}
             {errorMessages.paymentExpiredMessage}
 
-            {/* Sélecteur de mode de paiement : juste au-dessus du formulaire */}
+            {/* Sélecteur de mode de paiement */}
             <PaymentMethodSelector />
 
             {showPaymentForm ? (
@@ -589,7 +586,7 @@ export const CheckoutPageWithPayment = props => {
                   formId="CheckoutPagePaymentForm"
                   authorDisplayName={listing?.author?.attributes?.profile?.displayName}
                   showInitialMessageInput={showInitialMessageInput}
-                  initialValues={initialValuesForStripePayment}
+                  initialValues={{ name: userName, recipientName: userName }}
                   initiateOrderError={initiateOrderError}
                   confirmCardPaymentError={confirmCardPaymentError}
                   confirmPaymentError={confirmPaymentError}
@@ -619,7 +616,10 @@ export const CheckoutPageWithPayment = props => {
                       });
                     }
                   }}
-                  askShippingDetails={askShippingDetails}
+                  askShippingDetails={
+                    orderData?.deliveryMethod === 'shipping' &&
+                    !hasTransactionPassedPendingPayment(existingTransaction, process)
+                  }
                   showPickUplocation={orderData?.deliveryMethod === 'pickup'}
                   listingLocation={listing?.attributes?.publicData?.location}
                   totalPrice={totalPrice}
