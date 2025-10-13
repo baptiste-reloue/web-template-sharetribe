@@ -460,39 +460,21 @@
 }
 
 /* === Payment method selector & Cash form === */
-.paymentMethodSection {
-  margin: 12px 0 8px;
-  padding: 12px;
-  border: 1px solid var(--colorGrey100);
-  border-radius: 8px;
-  background: #fafafa;
-}
-.sectionTitle {
-  margin: 0 0 8px;
-}
-.radioRow {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-}
+.paymentMethodSection { margin: 8px 0 12px; }
+.radioRow { display: flex; gap: 20px; align-items: center; }
+.radioLabel { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 
-.cashBox {
-  margin-top: 12px;
-  padding: 16px;
-  border: 1px dashed #d4b106; /* jaune discret */
-  border-radius: 8px;
-  background: #fffbea;
-}
-
+.cashBox { margin-top: 8px; }
 .formGrid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  margin-bottom: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
 }
-@media (--viewportMedium) {
-  .formGrid { grid-template-columns: 1fr 1fr; }
-}
-.submitButton {
-  max-width: 320px;
+.formItem { display: flex; flex-direction: column; }
+.formItem > input,
+.formItem > textarea { padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+.submitButton { margin-top: 16px; }
+
+@media (max-width: 768px) {
+  .formGrid { grid-template-columns: 1fr; }
 }
