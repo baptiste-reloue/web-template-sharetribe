@@ -10,16 +10,7 @@ import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
 import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
 
 // Import shared components
-import {
-  H3,
-  H4,
-  NamedLink,
-  OrderBreakdown,
-  Page,
-  PrimaryButton,
-  FieldRadioButton,
-  FieldTextInput,
-} from '../../components';
+import { H3, H4, NamedLink, OrderBreakdown, Page, PrimaryButton } from '../../components';
 
 import {
   bookingDatesMaybe,
@@ -47,7 +38,7 @@ import css from './CheckoutPage.module.css';
 const STRIPE_PI_USER_ACTIONS_DONE_STATUSES = ['processing', 'requires_capture', 'succeeded'];
 
 // Cash process constants
-const CASH_PROCESS_ALIAS = 'reloue-booking-cash';
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
 const CASH_INITIAL_TRANSITION = 'transition/request';
 
 // Helpers
@@ -297,6 +288,19 @@ export const CheckoutPageWithPayment = props => {
   const [submitting, setSubmitting] = useState(false);
   const [stripe, setStripe] = useState(null);
 
+  // Local state for payment method & billing form (HTML inputs)
+  const [paymentMethod, setPaymentMethod] = useState(props.paymentMethod || 'stripe');
+  const [billingValues, setBillingValues] = useState({
+    name: props.currentUser?.attributes?.profile
+      ? `${props.currentUser.attributes.profile.firstName} ${props.currentUser.attributes.profile.lastName}`
+      : '',
+    email: props.currentUser?.attributes?.email || '',
+    addressLine1: '',
+    city: '',
+    postalCode: '',
+    country: '',
+  });
+
   const {
     scrollingDisabled,
     speculateTransactionError,
@@ -315,10 +319,10 @@ export const CheckoutPageWithPayment = props => {
     listingTitle,
     title,
     config,
-    paymentMethod = 'stripe',
-    onChangePaymentMethod,
+    onChangePaymentMethod, // from parent (optional)
     routeConfiguration,
     history,
+    intl,
   } = props;
 
   const isCash = paymentMethod === 'cash';
@@ -355,7 +359,7 @@ export const CheckoutPageWithPayment = props => {
     ) : null;
 
   const totalPrice =
-    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, props.intl) : null;
+    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
   const process = processName ? getProcess(processName) : null;
   const transitions = process.transitions;
@@ -391,6 +395,7 @@ export const CheckoutPageWithPayment = props => {
   );
 
   const txTransitions = existingTransaction?.attributes?.transitions || [];
+  thepaymentmethod:
   const hasInquireTransition = txTransitions.find(tr => tr.transition === transitions.INQUIRE);
   const showInitialMessageInput = !hasInquireTransition;
 
@@ -418,7 +423,7 @@ export const CheckoutPageWithPayment = props => {
   if (!isStripeCompatibleCurrency) {
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
-        <CustomTopbar intl={props.intl} linkToExternalSite={config?.topbar?.logoLink} />
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <section className={css.incompatibleCurrency}>
             <H4 as="h1" className={css.heading}>
@@ -430,59 +435,99 @@ export const CheckoutPageWithPayment = props => {
     );
   }
 
-  // UI: sélecteur cash / stripe (placé au-dessus du formulaire, donc après le bloc "Lieu")
+  // === UI composants 100% HTML (pas de react-final-form)
   const PaymentMethodSelector = () => (
     <div className={css.paymentMethodSection}>
       <H4 className={css.sectionTitle}>Mode de paiement</H4>
       <div className={css.radioRow}>
-        <FieldRadioButton
-          id="pm-stripe"
-          name="paymentMethod"
-          value="stripe"
-          label="Carte (Stripe)"
-          checked={paymentMethod === 'stripe'}
-          onChange={() => onChangePaymentMethod && onChangePaymentMethod('stripe')}
-        />
-        <FieldRadioButton
-          id="pm-cash"
-          name="paymentMethod"
-          value="cash"
-          label="Espèces à la remise"
-          checked={paymentMethod === 'cash'}
-          onChange={() => onChangePaymentMethod && onChangePaymentMethod('cash')}
-        />
+        <label className={css.radioLabel}>
+          <input
+            type="radio"
+            name="pm"
+            value="stripe"
+            checked={!isCash}
+            onChange={() => {
+              setPaymentMethod('stripe');
+              onChangePaymentMethod && onChangePaymentMethod('stripe');
+            }}
+          />
+          <span> Carte (Stripe)</span>
+        </label>
+        <label className={css.radioLabel}>
+          <input
+            type="radio"
+            name="pm"
+            value="cash"
+            checked={isCash}
+            onChange={() => {
+              setPaymentMethod('cash');
+              onChangePaymentMethod && onChangePaymentMethod('cash');
+            }}
+          />
+          <span> Espèces à la remise</span>
+        </label>
       </div>
     </div>
   );
 
   const BillingDetailsForm = ({ onSubmit }) => {
-    const [v, setV] = useState({
-      name: userName || '',
-      email: currentUser?.attributes?.email || '',
-      addressLine1: '',
-      city: '',
-      postalCode: '',
-      country: '',
-    });
-    const onChange = (k, val) => setV(prev => ({ ...prev, [k]: val }));
+    const onChange = (k, val) => setBillingValues(prev => ({ ...prev, [k]: val }));
+    const v = billingValues;
     const ok = v.name && v.email && v.addressLine1 && v.city && v.postalCode && v.country;
 
     return (
       <div className={css.cashBox}>
         <H4 className={css.sectionTitle}>Coordonnées de facturation</H4>
         <div className={css.formGrid}>
-          <FieldTextInput id="bd-name" label="Nom complet" value={v.name} onChange={e => onChange('name', e.target.value)} required />
-          <FieldTextInput id="bd-email" type="email" label="Email" value={v.email} onChange={e => onChange('email', e.target.value)} required />
-          <FieldTextInput id="bd-address" label="Adresse" value={v.addressLine1} onChange={e => onChange('addressLine1', e.target.value)} required />
-          <FieldTextInput id="bd-city" label="Ville" value={v.city} onChange={e => onChange('city', e.target.value)} required />
-          <FieldTextInput id="bd-postal" label="Code postal" value={v.postalCode} onChange={e => onChange('postalCode', e.target.value)} required />
-          <FieldTextInput id="bd-country" label="Pays" value={v.country} onChange={e => onChange('country', e.target.value)} required />
+          <div className={css.formItem}>
+            <label htmlFor="bd-name">Nom complet</label>
+            <input id="bd-name" value={v.name} onChange={e => onChange('name', e.target.value)} />
+          </div>
+          <div className={css.formItem}>
+            <label htmlFor="bd-email">Email</label>
+            <input
+              id="bd-email"
+              type="email"
+              value={v.email}
+              onChange={e => onChange('email', e.target.value)}
+            />
+          </div>
+          <div className={css.formItem}>
+            <label htmlFor="bd-address">Adresse</label>
+            <input
+              id="bd-address"
+              value={v.addressLine1}
+              onChange={e => onChange('addressLine1', e.target.value)}
+            />
+          </div>
+          <div className={css.formItem}>
+            <label htmlFor="bd-city">Ville</label>
+            <input id="bd-city" value={v.city} onChange={e => onChange('city', e.target.value)} />
+          </div>
+          <div className={css.formItem}>
+            <label htmlFor="bd-postal">Code postal</label>
+            <input
+              id="bd-postal"
+              value={v.postalCode}
+              onChange={e => onChange('postalCode', e.target.value)}
+            />
+          </div>
+          <div className={css.formItem}>
+            <label htmlFor="bd-country">Pays</label>
+            <input
+              id="bd-country"
+              value={v.country}
+              onChange={e => onChange('country', e.target.value)}
+            />
+          </div>
         </div>
 
         <PrimaryButton
           className={css.submitButton}
           type="button"
-          onClick={() => onSubmit(v)}
+          onClick={() =>
+            onSubmit(v)
+          }
           inProgress={submitting}
           disabled={submitting || !ok}
         >
@@ -494,7 +539,7 @@ export const CheckoutPageWithPayment = props => {
 
   return (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
-      <CustomTopbar intl={props.intl} linkToExternalSite={config?.topbar?.logoLink} />
+      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
       <div className={css.contentContainer}>
         <MobileListingImage
           listingTitle={listingTitle}
@@ -524,12 +569,15 @@ export const CheckoutPageWithPayment = props => {
             {errorMessages.retrievePaymentIntentErrorMessage}
             {errorMessages.paymentExpiredMessage}
 
+            {/* Sélecteur de mode de paiement : juste au-dessus du formulaire */}
             <PaymentMethodSelector />
 
             {showPaymentForm ? (
               isCash ? (
                 <BillingDetailsForm
-                  onSubmit={vals => handleSubmitCash(vals, { ...props, routeConfiguration, history }, setSubmitting)}
+                  onSubmit={vals =>
+                    handleSubmitCash(vals, { ...props, routeConfiguration, history }, setSubmitting)
+                  }
                 />
               ) : (
                 <StripePaymentForm
@@ -555,7 +603,6 @@ export const CheckoutPageWithPayment = props => {
                   paymentIntent={paymentIntent}
                   onStripeInitialized={stripeObj => {
                     setStripe(stripeObj);
-                    // Récupération du PaymentIntent si besoin
                     if (
                       stripeObj &&
                       !paymentIntent &&
@@ -564,8 +611,12 @@ export const CheckoutPageWithPayment = props => {
                       !hasPaymentExpired(existingTransaction, process)
                     ) {
                       const { stripePaymentIntentClientSecret } =
-                        existingTransaction.attributes.protectedData?.stripePaymentIntents?.default || {};
-                      props.onRetrievePaymentIntent({ stripe: stripeObj, stripePaymentIntentClientSecret });
+                        existingTransaction.attributes.protectedData?.stripePaymentIntents?.default ||
+                        {};
+                      props.onRetrievePaymentIntent({
+                        stripe: stripeObj,
+                        stripePaymentIntentClientSecret,
+                      });
                     }
                   }}
                   askShippingDetails={askShippingDetails}
@@ -595,7 +646,7 @@ export const CheckoutPageWithPayment = props => {
           processName={processName}
           breakdown={breakdown}
           showListingImage={showListingImage}
-          intl={props.intl}
+          intl={intl}
         />
       </div>
     </Page>
