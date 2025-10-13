@@ -65,12 +65,17 @@ const prefixPriceVariantProperties = priceVariant => {
 const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
   const quantityMaybe = quantity ? { quantity } : {};
-  ￼const seats = pageData.orderData?.seats;
+
+  const seats = pageData.orderData?.seats;
   const seatsMaybe = seats ? { seats } : {};
+
   const deliveryMethod = pageData.orderData?.deliveryMethod;
   const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
-  const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
 
+  const { listingType, unitType, priceVariants } =
+    pageData?.listing?.attributes?.publicData || {};
+
+  // price variant data for fixed duration bookings
   const priceVariantName = pageData.orderData?.priceVariantName;
   const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
   const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
