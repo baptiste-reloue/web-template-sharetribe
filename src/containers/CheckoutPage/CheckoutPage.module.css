@@ -460,7 +460,6 @@
 }
 
 /* === Payment method selector & Cash form === */
-
 .subHeading { margin: 16px 0 8px; font-weight: 600; }
 .paymentMethodSection { display:flex; gap:24px; margin: 6px 0 12px; }
 .radioLabel { display:flex; align-items:center; gap:8px; cursor:pointer; }
