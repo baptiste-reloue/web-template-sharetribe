@@ -46,7 +46,7 @@ import css from './CheckoutPage.module.css';
 const STRIPE_PI_USER_ACTIONS_DONE_STATUSES = ['processing', 'requires_capture', 'succeeded'];
 
 // Cash process (alias/version à jour)
-const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash';
 const CASH_INITIAL_TRANSITION = 'transition/request';
 
 // ---------- helpers ----------
