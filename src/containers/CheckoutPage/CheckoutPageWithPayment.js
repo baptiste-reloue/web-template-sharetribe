@@ -19,7 +19,6 @@ import {
   PrimaryButton,
   Form as FinalFormWrapper,
   FieldTextInput,
-  FieldTextarea,
 } from '../../components';
 
 import {
@@ -546,7 +545,7 @@ export const CheckoutPageWithPayment = props => {
             {/* Contenu conditionnel (harmonisé) */}
             {showPaymentForm ? (
               isCash ? (
-                // === CASH: même DS (Final Form + FieldTextInput/FieldTextarea) ===
+                // === CASH: même DS (Final Form + FieldTextInput) ===
                 <FinalFormWrapper
                   className={css.paymentForm}
                   onSubmit={values => handleSubmitCash(values, { ...props, routeConfiguration, history }, setSubmitting)}
@@ -620,9 +619,10 @@ export const CheckoutPageWithPayment = props => {
                           />
                         </div>
 
-                        <FieldTextarea
+                        <FieldTextInput
                           id="bd-note"
                           name="note"
+                          type="text"
                           label="Informations additionnelles"
                           rows={3}
                         />
