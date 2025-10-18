@@ -461,17 +461,15 @@
 
 /* === Payment method selector & Cash form === */
 
-.paymentSubTitle { margin: 8px 0 6px; font-weight: 600; }
-.paymentMethodSection { margin: 4px 0 12px; }
-.radioRow { display: flex; gap: 20px; align-items: center; }
-.radioLabel { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.subHeading { margin: 16px 0 8px; font-weight: 600; }
+.paymentMethodSection { display:flex; gap:24px; margin: 6px 0 12px; }
+.radioLabel { display:flex; align-items:center; gap:8px; cursor:pointer; }
 
 .pickupLocation { margin-bottom: 12px; }
-.subHeading { margin: 16px 0 8px; font-weight: 600; }
-.pickupAddress { font-size: 14px; line-height: 1.4; color: #333; }
+.pickupAddress { font-size:14px; color:#333; }
 
 .cashBox { margin-top: 8px; }
-.formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.formGrid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
 .submitButton { margin-top: 16px; }
 
-@media (max-width: 768px) { .formGrid { grid-template-columns: 1fr; } }
+@media (max-width: 768px){ .formGrid{ grid-template-columns:1fr; } }
