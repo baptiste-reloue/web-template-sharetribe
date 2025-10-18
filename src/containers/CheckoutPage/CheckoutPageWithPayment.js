@@ -17,7 +17,6 @@ import {
   PrimaryButton,
   Form as FinalForm,
   FieldTextInput,
-  FieldTextArea,
 } from '../../components';
 
 import {
@@ -557,7 +556,7 @@ export const CheckoutPageWithPayment = props => {
                           <FieldTextInput id="bd-country" name="country" type="text" label="Pays" required />
                         </div>
 
-                        <FieldTextArea id="bd-note" name="note" label="Informations additionnelles" rows={3} />
+                        <FieldTextInput id="bd-note" name="note" type="text" label="Informations additionnelles" rows={3} />
 
                         <PrimaryButton className={css.submitButton} type="submit" disabled={disabled}>
                           {submitting ? 'Envoi…' : 'Demander en espèces'}
