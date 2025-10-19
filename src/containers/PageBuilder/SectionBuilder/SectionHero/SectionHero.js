@@ -2,7 +2,7 @@ import React from 'react';
 import classNames from 'classnames';
 
 import Field, { hasDataInFields } from '../../Field';
-import { NamedLink } from '../../../components';
+import { NamedLink } from '../../../../components';
 
 import SectionContainer from '../SectionContainer';
 import css from './SectionHero.module.css';
