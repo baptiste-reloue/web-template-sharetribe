@@ -47,9 +47,6 @@ import CheckoutPageWithInquiryProcess from './CheckoutPageWithInquiryProcess';
 
 const STORAGE_KEY = 'CheckoutPage';
 
-// alias de ton process CASH (à adapter si besoin)
-const CASH_PROCESS_LATEST_NAME = 'reloue-booking-cash';
-
 const onSubmitCallback = () => {
   clearData(STORAGE_KEY);
 };
@@ -67,12 +64,6 @@ const getProcessName = pageData => {
 const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  // IMPORTANT : cette prop est injectée par les wrappers
-  // CheckoutStripePage / CheckoutCashPage (ou par la page de choix).
-  // 'stripe' | 'cash' ; par défaut on reste en stripe.
-  const { forcedPaymentMethod = 'stripe' } = props;
-
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
@@ -87,18 +78,16 @@ const EnhancedCheckoutPage = props => {
       fetchSpeculatedTransaction,
       fetchStripeCustomer,
     } = props;
-
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // Do not fetch extra data if user is not active (e.g. pending-approval.)
+    // Do not fetch extra data if user is not active (E.g. they are in pending-approval state.)
     if (isUserAuthorized(currentUser)) {
-      // On ne charge Stripe/speculation Stripe que si:
-      // - process ≠ inquiry
-      // - ET on n'est pas en mode CASH
-      if (getProcessName(data) !== INQUIRY_PROCESS_NAME && forcedPaymentMethod !== 'cash') {
+      // This is for processes using payments with Stripe integration
+      if (getProcessName(data) !== INQUIRY_PROCESS_NAME) {
+        // Fetch StripeCustomer and speculateTransition for transactions that include Stripe payments
         loadInitialDataForStripePayments({
           pageData: data || {},
           fetchSpeculatedTransaction,
@@ -107,7 +96,6 @@ const EnhancedCheckoutPage = props => {
         });
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const {
@@ -118,33 +106,33 @@ const EnhancedCheckoutPage = props => {
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
-
-  const baseProcessName = getProcessName(pageData);
-  const isInquiryProcess = baseProcessName === INQUIRY_PROCESS_NAME;
-
-  // Si on force CASH, on remplace le process utilisé par la page paiement
-  const effectiveProcessName =
-    forcedPaymentMethod === 'cash' ? CASH_PROCESS_LATEST_NAME : baseProcessName;
+  const processName = getProcessName(pageData);
+  const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
   // Handle redirection to ListingPage, if this is own listing or if required data is not available
   const listing = pageData?.listing;
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
-  const hasRequiredData = !!(listing?.id && listing?.author?.id && baseProcessName);
+  const hasRequiredData = !!(listing?.id && listing?.author?.id && processName);
   const shouldRedirect = isDataLoaded && !(hasRequiredData && !isOwnListing);
   const shouldRedirectUnathorizedUser = isDataLoaded && !isUserAuthorized(currentUser);
   // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
+    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
+      // - or when they are sending the order (if the operator removed transaction rights
+      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
   // Redirect back to ListingPage if data is missing.
+  // Redirection must happen before any data format error is thrown (e.g. wrong currency)
   if (shouldRedirect) {
     // eslint-disable-next-line no-console
     console.error('Missing or invalid data for checkout, redirecting back to listing page.', {
       listing,
     });
     return <NamedRedirect name="ListingPage" params={params} />;
+    // Redirect to NoAccessPage if access rights are missing
   } else if (shouldRedirectUnathorizedUser) {
     return (
       <NamedRedirect
@@ -169,20 +157,20 @@ const EnhancedCheckoutPage = props => {
 
   const listingTitle = listing?.attributes?.title;
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
-  const title = baseProcessName
+  const title = processName
     ? intl.formatMessage(
-        { id: `CheckoutPage.${baseProcessName}.title` },
+        { id: `CheckoutPage.${processName}.title` },
         { listingTitle, authorDisplayName }
       )
     : 'Checkout page is loading data';
 
-  return baseProcessName && isInquiryProcess ? (
+  return processName && isInquiryProcess ? (
     <CheckoutPageWithInquiryProcess
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
       history={history}
-      processName={baseProcessName}
+      processName={processName}
       pageData={pageData}
       listingTitle={listingTitle}
       title={title}
@@ -191,14 +179,13 @@ const EnhancedCheckoutPage = props => {
       showListingImage={showListingImage}
       {...props}
     />
-  ) : baseProcessName && !isInquiryProcess && !speculateTransactionInProgress ? (
+  ) : processName && !isInquiryProcess && !speculateTransactionInProgress ? (
     <CheckoutPageWithPayment
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
       history={history}
-      // Utiliser le process forcé si CASH
-      processName={effectiveProcessName}
+      processName={processName}
       sessionStorageKey={STORAGE_KEY}
       pageData={pageData}
       setPageData={setPageData}
@@ -206,8 +193,6 @@ const EnhancedCheckoutPage = props => {
       title={title}
       onSubmitCallback={onSubmitCallback}
       showListingImage={showListingImage}
-      // on informe l'enfant du mode choisi pour masquer/afficher Stripe
-      paymentMethod={forcedPaymentMethod}
       {...props}
     />
   ) : (
