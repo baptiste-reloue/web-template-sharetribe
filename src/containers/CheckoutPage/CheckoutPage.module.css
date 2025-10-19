@@ -458,37 +458,3 @@
 .incompatibleCurrency {
   margin-top: 20px;
 }
-
-/* === Payment method selector & Cash form === */
-.section { margin-top: 16px; }
-
-.paymentMethodRow {
-  display: flex;
-  gap: 24px;
-  margin: 8px 0 16px;
-}
-
-.radioLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.locationBox {
-  padding: 10px 12px;
-  border: 1px solid var(--attentionColorLight, #e6e6e6);
-  border-radius: 6px;
-  background: #fff;
-}
-
-.billingForm { margin-top: 8px; }
-
-.formGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 16px;
-}
-
-@media (max-width: 768px) {
-  .formGrid { grid-template-columns: 1fr; }
-}
