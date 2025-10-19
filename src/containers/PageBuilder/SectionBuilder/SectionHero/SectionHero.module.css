@@ -40,9 +40,9 @@
 
 @media (max-width: 768px) {
   .signupCta {
-    width: 90%;
+    width: 100%;
     text-align: center;
-    font-size: 1.1rem;
-    padding: 14px 0;
+    font-size: 1.15rem;
+    padding: 16px 0;
   }
 }
