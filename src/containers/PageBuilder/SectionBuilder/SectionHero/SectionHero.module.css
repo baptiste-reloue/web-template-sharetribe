@@ -16,13 +16,13 @@
 .signupCtaWrapper {
   display: flex;
   justify-content: center;
-  margin-top: 16px;
+  margin-top: 30px;
 }
 
 .signupCta {
   background-color: #f9a826; /* Orange RELOUE */
   color: #fff;
-  font-weight: 600;
+  font-weight: 1000;
   padding: 12px 24px;
   border-radius: 8px;
   text-decoration: none;
