@@ -401,7 +401,7 @@ const routeConfiguration = (layoutConfig, accessControlConfig) => {
       path: '/checkout/cash',
       name: 'CheckoutCashPage',
       component: CheckoutCashPage,
-    }
+    },
 
     // Do not change this path!
     //
