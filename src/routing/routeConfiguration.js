@@ -36,6 +36,10 @@ const StripePayoutPage = loadable(() => import(/* webpackChunkName: "StripePayou
 const TermsOfServicePage = loadable(() => import(/* webpackChunkName: "TermsOfServicePage" */ '../containers/TermsOfServicePage/TermsOfServicePage'));
 const TransactionPage = loadable(() => import(/* webpackChunkName: "TransactionPage" */ '../containers/TransactionPage/TransactionPage'));
 const NoAccessPage = loadable(() => import(/* webpackChunkName: "NoAccessPage" */ '../containers/NoAccessPage/NoAccessPage'));
+const PaymentMethodPage = loadable(() => import(/* webpackChunkName: "PaymentMethodPage" */ '../containers/PaymentMethodPage/PaymentMethodPage'));
+const CheckoutStripePage = loadable(() => import(/* webpackChunkName: "CheckoutStripePage" */ '../containers/CheckoutStripePage/CheckoutStripePage'));
+const CheckoutCashPage = loadable(() => import(/* webpackChunkName: "CheckoutCashPage" */ '../containers/CheckoutCashPage/CheckoutCashPage'));
+
 
 // Styleguide helps you to review current components and develop new ones
 const StyleguidePage = loadable(() => import(/* webpackChunkName: "StyleguidePage" */ '../containers/StyleguidePage/StyleguidePage'));
@@ -381,6 +385,23 @@ const routeConfiguration = (layoutConfig, accessControlConfig) => {
       name: 'NotFoundPage',
       component: props => <NotFoundPage {...props} />,
     },
+
+    // New route for CheckOutPage via STRIPE or CASH
+    {
+      path: '/payment-method',
+      name: 'PaymentMethodPage',
+      component: PaymentMethodPage,
+    },
+    {
+      path: '/checkout/stripe',
+      name: 'CheckoutStripePage',
+      component: CheckoutStripePage,
+    },
+    {
+      path: '/checkout/cash',
+      name: 'CheckoutCashPage',
+      component: CheckoutCashPage,
+    }
 
     // Do not change this path!
     //
