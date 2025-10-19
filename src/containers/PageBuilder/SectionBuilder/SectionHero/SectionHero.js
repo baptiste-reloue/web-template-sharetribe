@@ -73,15 +73,12 @@ const SectionHero = props => {
           {/* ⬇️ CTA fixe “Inscrivez-vous !” */}
           <div className={css.signupCtaWrapper}>
             <NamedLink
-              name="SignupPage"
+              name="signup"
               className={classNames(defaultClasses.ctaButton, css.signupCta)}
             >
               Inscrivez-vous !
             </NamedLink>
           </div>
-          {/* Si NamedLink n’est pas dispo, tu peux remplacer par :
-              <a href="/signup" className={classNames(defaultClasses.ctaButton, css.signupCta)}>Inscrivez-vous !</a>
-          */}
         </header>
       ) : null}
     </SectionContainer>
