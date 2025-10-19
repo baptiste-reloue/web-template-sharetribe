@@ -2,6 +2,7 @@ import React from 'react';
 import classNames from 'classnames';
 
 import Field, { hasDataInFields } from '../../Field';
+import { NamedLink } from '../../components'; // ⬅️ ajouté
 
 import SectionContainer from '../SectionContainer';
 import css from './SectionHero.module.css';
@@ -68,6 +69,19 @@ const SectionHero = props => {
           <Field data={title} className={defaultClasses.title} options={fieldOptions} />
           <Field data={description} className={defaultClasses.description} options={fieldOptions} />
           <Field data={callToAction} className={defaultClasses.ctaButton} options={fieldOptions} />
+
+          {/* ⬇️ CTA fixe “Inscrivez-vous !” */}
+          <div className={css.signupCtaWrapper}>
+            <NamedLink
+              name="SignupPage"
+              className={classNames(defaultClasses.ctaButton, css.signupCta)}
+            >
+              Inscrivez-vous !
+            </NamedLink>
+          </div>
+          {/* Si NamedLink n’est pas dispo, tu peux remplacer par :
+              <a href="/signup" className={classNames(defaultClasses.ctaButton, css.signupCta)}>Inscrivez-vous !</a>
+          */}
         </header>
       ) : null}
     </SectionContainer>
