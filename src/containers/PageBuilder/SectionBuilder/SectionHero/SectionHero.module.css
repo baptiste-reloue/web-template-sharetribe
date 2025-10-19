@@ -16,19 +16,24 @@
 .signupCtaWrapper {
   display: flex;
   justify-content: center;
-  margin-top: 30px;
+  align-items: center;
+  margin-top: 28px;
 }
 
 .signupCta {
-  background-color: #f9a826; /* Orange RELOUE */
+  background-color: #f9a826; /* orange RELOUE */
   color: #fff;
-  font-weight: 1000;
-  padding: 12px 24px;
-  border-radius: 8px;
+  font-weight: 800;
+  font-size: 1.25rem; /* ~20px */
+  padding: 16px 40px;
+  border-radius: 10px;
   text-decoration: none;
-  transition: background 0.25s ease;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 .signupCta:hover {
   background-color: #e89200;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
 }
