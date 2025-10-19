@@ -12,3 +12,23 @@
   justify-content: center;
   align-items: center;
 }
+
+.signupCtaWrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.signupCta {
+  background-color: #f9a826; /* Orange RELOUE */
+  color: #fff;
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.25s ease;
+}
+
+.signupCta:hover {
+  background-color: #e89200;
+}
