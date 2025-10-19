@@ -264,7 +264,7 @@ export const ListingPageComponent = props => {
     onInitializeCardPaymentData,
   });
 
-const handleOrderSubmit = values => {
+  const handleOrderSubmit = values => {
     const isCurrentlyClosed = currentListing.attributes.state === LISTING_STATE_CLOSED;
     if (isOwnListing || isCurrentlyClosed) {
       window.scrollTo(0, 0);
@@ -273,28 +273,20 @@ const handleOrderSubmit = values => {
 
     // 1) On stocke l’état pour le checkout (dates, quantité…) en session
     //    -> identique au flux standard, mais on force notre route “choix paiement”
-    const initialValues = {
+   const initialValues = {
       listing: currentListing,
       orderData: values, // OrderPanel renvoie l’objet complet (bookingDates, quantity, etc.)
     };
     callSetInitialValues(setInitialValues, initialValues, /* saveToSessionStorage */ true);
 
     // 2) Redirection vers la page de choix du paiement
-    const choicePath = pathByRouteName('CheckoutPaymentChoicePage', routeConfiguration, {
-      id: currentListing.id.uuid,
-      slug: listingSlug,
-    });
-    history.push(choicePath);
+   const choicePath = pathByRouteName('CheckoutPaymentChoicePage', routeConfiguration, {
+     id: currentListing.id.uuid,
+     slug: listingSlug,
+   });
+   history.push(choicePath);
   };
 
-  const handleOrderSubmit = values => {
-    const isCurrentlyClosed = currentListing.attributes.state === LISTING_STATE_CLOSED;
-    if (isOwnListing || isCurrentlyClosed) {
-      window.scrollTo(0, 0);
-    } else {
-      onSubmit(values);
-    }
-  };
 
   const facebookImages = listingImages(currentListing, 'facebook');
   const twitterImages = listingImages(currentListing, 'twitter');
