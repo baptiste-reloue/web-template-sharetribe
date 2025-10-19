@@ -3,7 +3,7 @@ import classNames from 'classnames';
 import { useSelector } from 'react-redux';
 
 import Field, { hasDataInFields } from '../../Field';
-import NamedLink from '../../../components/NamedLink/NamedLink'; // ✅ lien interne Sharetribe
+import { NamedLink } from '../../../../components';
 
 import SectionContainer from '../SectionContainer';
 import css from './SectionHero.module.css';
