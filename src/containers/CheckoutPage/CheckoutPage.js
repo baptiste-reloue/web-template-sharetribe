@@ -4,7 +4,7 @@ import { connect } from 'react-redux';
 import { useHistory } from 'react-router-dom';
 import { useIntl } from 'react-intl';
 
-// Contexts & utils
+// Import contexts and util modules
 import { useConfiguration } from '../../context/configurationContext';
 import { useRouteConfiguration } from '../../context/routeConfigurationContext';
 import { userDisplayNameAsString } from '../../util/data';
@@ -17,18 +17,18 @@ import { isErrorNoPermissionForInitiateTransactions } from '../../util/errors';
 import { INQUIRY_PROCESS_NAME, resolveLatestProcessName } from '../../transactions/transaction';
 import { requireListingImage } from '../../util/configHelpers';
 
-// Ducks
+// Import global thunk functions
 import { isScrollingDisabled } from '../../ducks/ui.duck';
 import { confirmCardPayment, retrievePaymentIntent } from '../../ducks/stripe.duck';
 import { savePaymentMethod } from '../../ducks/paymentMethods.duck';
 
-// Shared
+// Import shared components
 import { NamedRedirect, Page } from '../../components';
 
-// Session helpers (doit être importé avant les sous-pages)
+// Session helpers file needs to be imported before CheckoutPageWithPayment and CheckoutPageWithInquiryProcess
 import { storeData, clearData, handlePageData } from './CheckoutPageSessionHelpers';
 
-// Local thunks
+// Import modules from this directory
 import {
   initiateOrder,
   setInitialValues,
@@ -65,6 +65,9 @@ const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
+  // NEW: choix du mode de paiement (par défaut Stripe)
+  const [paymentMethod, setPaymentMethod] = useState('stripe'); // 'stripe' | 'cash'
+
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
@@ -79,16 +82,16 @@ const EnhancedCheckoutPage = props => {
       fetchSpeculatedTransaction,
       fetchStripeCustomer,
     } = props;
-
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // Charger données Stripe/speculation uniquement si l’utilisateur est autorisé
+    // Do not fetch extra data if user is not active (E.g. they are in pending-approval state.)
     if (isUserAuthorized(currentUser)) {
-      // Et uniquement pour un process “paiement” (donc pas default-inquiry)
+      // This is for processes using payments with Stripe integration
       if (getProcessName(data) !== INQUIRY_PROCESS_NAME) {
+        // Fetch StripeCustomer and speculateTransition for transactions that include Stripe payments
         loadInitialDataForStripePayments({
           pageData: data || {},
           fetchSpeculatedTransaction,
@@ -97,7 +100,7 @@ const EnhancedCheckoutPage = props => {
         });
       }
     }
-  }, []); 
+  }, []);
 
   const {
     currentUser,
@@ -111,24 +114,30 @@ const EnhancedCheckoutPage = props => {
   const processName = getProcessName(pageData);
   const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
-  // Redirections & gardes
+  // Handle redirection to ListingPage, if this is own listing or if required data is not available
   const listing = pageData?.listing;
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
   const hasRequiredData = !!(listing?.id && listing?.author?.id && processName);
-
   const shouldRedirect = isDataLoaded && !(hasRequiredData && !isOwnListing);
   const shouldRedirectUnathorizedUser = isDataLoaded && !isUserAuthorized(currentUser);
+  // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
+    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
+      // - or when they are sending the order (if the operator removed transaction rights
+      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
+  // Redirect back to ListingPage if data is missing.
+  // Redirection must happen before any data format error is thrown (e.g. wrong currency)
   if (shouldRedirect) {
     // eslint-disable-next-line no-console
     console.error('Missing or invalid data for checkout, redirecting back to listing page.', {
       listing,
     });
     return <NamedRedirect name="ListingPage" params={params} />;
+    // Redirect to NoAccessPage if access rights are missing
   } else if (shouldRedirectUnathorizedUser) {
     return (
       <NamedRedirect
@@ -145,7 +154,6 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
-  // visuels
   const validListingTypes = config.listing.listingTypes;
   const foundListingTypeConfig = validListingTypes.find(
     conf => conf.listingType === listing?.attributes?.publicData?.listingType
@@ -161,9 +169,8 @@ const EnhancedCheckoutPage = props => {
       )
     : 'Checkout page is loading data';
 
-  // === rendu ===
+  // === RENDU ===
   if (processName && isInquiryProcess) {
-    // Process sans paiement (default-inquiry)
     return (
       <CheckoutPageWithInquiryProcess
         config={config}
@@ -181,23 +188,52 @@ const EnhancedCheckoutPage = props => {
       />
     );
   } else if (processName && !isInquiryProcess && !speculateTransactionInProgress) {
-    // Process avec paiement (Stripe OU Cash) – le choix est géré DANS CheckoutPageWithPayment
+    // Affiche le choix Stripe / Espèces ici, juste au-dessus de la page de paiement
     return (
-      <CheckoutPageWithPayment
-        config={config}
-        routeConfiguration={routeConfiguration}
-        intl={intl}
-        history={history}
-        processName={processName}
-        sessionStorageKey={STORAGE_KEY}
-        pageData={pageData}
-        setPageData={setPageData}
-        listingTitle={listingTitle}
-        title={title}
-        onSubmitCallback={onSubmitCallback}
-        showListingImage={showListingImage}
-        {...props}
-      />
+      <>
+        <section style={{ margin: '1rem 0' }}>
+          <h3>Mode de paiement</h3>
+          <label style={{ marginRight: '1rem' }}>
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="stripe"
+              checked={paymentMethod === 'stripe'}
+              onChange={() => setPaymentMethod('stripe')}
+            />
+            <span style={{ marginLeft: 6 }}>Carte (Stripe)</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="cash"
+              checked={paymentMethod === 'cash'}
+              onChange={() => setPaymentMethod('cash')}
+            />
+            <span style={{ marginLeft: 6 }}>Espèces à la remise</span>
+          </label>
+        </section>
+
+        <CheckoutPageWithPayment
+          config={config}
+          routeConfiguration={routeConfiguration}
+          intl={intl}
+          history={history}
+          // IMPORTANT : si "cash", on force le nom de process côté page de paiement.
+          // CheckoutPageWithPayment utilisera cette prop pour choisir processAlias & transition.
+          processName={paymentMethod === 'cash' ? 'reloue-booking-cash' : processName}
+          sessionStorageKey={STORAGE_KEY}
+          pageData={pageData}
+          setPageData={setPageData}
+          listingTitle={listingTitle}
+          title={title}
+          onSubmitCallback={onSubmitCallback}
+          showListingImage={showListingImage}
+          paymentMethod={paymentMethod} // <-- on passe l'info au composant enfant
+          {...props}
+        />
+      </>
     );
   } else {
     return (
@@ -208,7 +244,6 @@ const EnhancedCheckoutPage = props => {
   }
 };
 
-// ===== Redux =====
 const mapStateToProps = state => {
   const {
     listing,
@@ -225,7 +260,6 @@ const mapStateToProps = state => {
   } = state.CheckoutPage;
   const { currentUser } = state.user;
   const { confirmCardPaymentError, paymentIntent, retrievePaymentIntentError } = state.stripe;
-
   return {
     scrollingDisabled: isScrollingDisabled(state),
     currentUser,
@@ -264,17 +298,20 @@ const mapDispatchToProps = dispatch => ({
     dispatch(savePaymentMethod(stripeCustomer, stripePaymentMethodId)),
 });
 
-const CheckoutPage = compose(connect(mapStateToProps, mapDispatchToProps))(EnhancedCheckoutPage);
+const CheckoutPage = compose(
+  connect(
+    mapStateToProps,
+    mapDispatchToProps
+  )
+)(EnhancedCheckoutPage);
 
-// Permet de “précharger” les infos et de les persister en sessionStorage
 CheckoutPage.setInitialValues = (initialValues, saveToSessionStorage = false) => {
   if (saveToSessionStorage) {
     const { listing, orderData } = initialValues;
     storeData(orderData, listing, null, STORAGE_KEY);
   }
+
   return setInitialValues(initialValues);
 };
-
-CheckoutPage.displayName = 'CheckoutPage';
 
 export default CheckoutPage;
