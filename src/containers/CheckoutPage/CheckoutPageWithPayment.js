@@ -1,5 +1,3 @@
-// src/containers/CheckoutPage/CheckoutPageWithPayment.js
-
 import React, { useState } from 'react';
 import { FormattedMessage } from '../../util/reactIntl';
 import { pathByRouteName } from '../../util/routes';
@@ -55,7 +53,7 @@ const CheckoutPageWithPayment = props => {
     history,
     routeConfiguration,
 
-    // thunks / actions
+    // Thunks / actions
     onInitiateCashOrder,
     onInitiateOrder,
     onConfirmCardPayment,
@@ -64,19 +62,17 @@ const CheckoutPageWithPayment = props => {
     onSavePaymentMethod,
 
     onSubmitCallback,
-    sessionStorageKey,
-    setPageData,
   } = props;
 
-  // --- Data extraction ---
+  // ---- Data extraction ----
   const listing = pageData?.listing;
   const orderData = pageData?.orderData || {};
-  const chosenPaymentMethod = orderData?.paymentMethod || 'card';
+  const chosenPaymentMethod = orderData?.paymentMethod || 'card'; // 'card' ou 'cash'
 
   const existingTransaction = ensureTransaction(pageData?.transaction);
   const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
 
-  // choose tx (existing with full lineItems > speculated)
+  // On choisit la transaction à afficher dans le breakdown :
   const tx =
     existingTransaction?.attributes?.lineItems?.length > 0
       ? existingTransaction
@@ -87,7 +83,10 @@ const CheckoutPageWithPayment = props => {
   const priceVariantName = tx?.attributes?.protectedData?.priceVariantName;
 
   const txBookingMaybe = tx?.booking?.id
-    ? { booking: tx.booking, timeZone }
+    ? {
+        booking: tx.booking,
+        timeZone,
+      }
     : {};
 
   const breakdown =
@@ -103,16 +102,10 @@ const CheckoutPageWithPayment = props => {
     ) : null;
 
   const totalPrice =
-    tx?.attributes?.lineItems?.length > 0
-      ? getFormattedTotalPrice(tx, intl)
-      : null;
+    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
   const process = processName ? getProcess(processName) : null;
-  const isPaymentExpired = hasPaymentExpired(
-    existingTransaction,
-    process,
-    isClockInSync
-  );
+  const isPaymentExpired = hasPaymentExpired(existingTransaction, process, isClockInSync);
 
   const listingNotFound =
     isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
@@ -135,42 +128,34 @@ const CheckoutPageWithPayment = props => {
     </NamedLink>
   );
 
-  // transactionId si déjà existante
+  // transactionId actuelle (si déjà créée)
   const transactionId = existingTransaction?.id || null;
 
-  // ------------------------------------------------------------------
-  // Helpers to prepare params
-  // ------------------------------------------------------------------
+  // -----------------------
+  // helpers
+  // -----------------------
   const buildOrderParams = optionalPaymentParams => {
-    // On ne gère pas ici de shippingDetails custom => vide
+    // On ne gère pas de shippingDetails custom ici
     const shippingDetails = {};
-    return getOrderParams(
-      pageData,
-      shippingDetails,
-      optionalPaymentParams,
-      config
-    );
+    return getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
   };
 
-  // ------------------------------------------------------------------
-  // CASH FLOW: no Stripe at all
-  // ------------------------------------------------------------------
+  // ----- FLOW CASH -----
   const handleCashSubmit = () => {
     if (submitting) return;
     setSubmitting(true);
 
-    const orderParams = buildOrderParams({}); // pas de stripe params
+    const orderParams = buildOrderParams({}); // pas de Stripe ici
 
     onInitiateCashOrder(orderParams, transactionId)
       .then(response => {
-        // Clear checkout session data
+        // nettoyage session checkout
         onSubmitCallback();
 
-        // Extraire l'ID de la transaction créée pour redirection OrderDetails
+        // On essaie de déduire l'ID de la transaction créée pour rediriger vers OrderDetailsPage
         let orderId = null;
 
-        // Plusieurs patterns possibles selon comment ton duck/SDK renvoie :
-        // 1) response.data.data.id
+        // Pattern 1
         if (
           response &&
           response.data &&
@@ -180,7 +165,7 @@ const CheckoutPageWithPayment = props => {
           orderId = response.data.data.id;
         }
 
-        // 2) response.payload.data.data.id
+        // Pattern 2 (redux-thunk qui renvoie { payload: { data: {...}} })
         if (
           !orderId &&
           response &&
@@ -194,14 +179,12 @@ const CheckoutPageWithPayment = props => {
 
         // Redirection
         if (orderId) {
-          const orderDetailsPath = pathByRouteName(
-            'OrderDetailsPage',
-            routeConfiguration,
-            { id: orderId }
-          );
+          const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
+            id: orderId,
+          });
           history.push(orderDetailsPath);
         } else {
-          // fallback => ListingPage
+          // fallback = retour à l'annonce
           history.push(
             pathByRouteName('ListingPage', routeConfiguration, {
               id: listing?.id?.uuid,
@@ -217,22 +200,13 @@ const CheckoutPageWithPayment = props => {
       });
   };
 
-  // ------------------------------------------------------------------
-  // CARD / STRIPE FLOW
-  // ------------------------------------------------------------------
+  // ----- FLOW STRIPE -----
   const handleCardSubmit = values => {
     if (submitting) return;
     setSubmitting(true);
 
-    // processCheckoutWithPayment encapsule :
-    // - initiateOrder (avec processAlias booking Stripe)
-    // - confirmCardPayment (Stripe)
-    // - confirmPayment transition
-    // - envoi du premier message
-    //
-    // On lui file toutes les dépendances dont il a besoin.
+    // On passe toutes les infos de la carte + message initial à processCheckoutWithPayment
     const optionalPaymentParams = {
-      // Ces valeurs viennent du formulaire StripePaymentForm (titulaire, message initial...)
       message: values?.message,
       setupPaymentMethod: values?.setupPaymentMethod,
       paymentIntentId: paymentIntent?.id,
@@ -250,10 +224,7 @@ const CheckoutPageWithPayment = props => {
       transactionId,
       stripeCustomerFetched,
       stripeCustomer: currentUser?.stripeCustomer,
-      hasDefaultPaymentMethod: hasDefaultPaymentMethod(
-        stripeCustomerFetched,
-        currentUser
-      ),
+      hasDefaultPaymentMethod: hasDefaultPaymentMethod(stripeCustomerFetched, currentUser),
       hasTransactionPassedPendingPayment: hasTransactionPassedPendingPayment(
         existingTransaction,
         process
@@ -268,12 +239,9 @@ const CheckoutPageWithPayment = props => {
     })
       .then(orderId => {
         onSubmitCallback();
-
-        const orderDetailsPath = pathByRouteName(
-          'OrderDetailsPage',
-          routeConfiguration,
-          { id: orderId }
-        );
+        const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
+          id: orderId,
+        });
         history.push(orderDetailsPath);
         setSubmitting(false);
       })
@@ -283,9 +251,7 @@ const CheckoutPageWithPayment = props => {
       });
   };
 
-  // ------------------------------------------------------------------
-  // View-level conditions
-  // ------------------------------------------------------------------
+  // Conditions d'affichage
   const showPaymentSection =
     currentUser &&
     !listingNotFound &&
@@ -294,15 +260,11 @@ const CheckoutPageWithPayment = props => {
     !retrievePaymentIntentError &&
     !isPaymentExpired;
 
-  const firstImage =
-    listing?.images && listing.images.length > 0 ? listing.images[0] : null;
+  const firstImage = listing?.images && listing.images.length > 0 ? listing.images[0] : null;
 
   return (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
-      <CustomTopbar
-        intl={intl}
-        linkToExternalSite={config?.topbar?.logoLink}
-      />
+      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
       <div className={css.contentContainer}>
         <MobileListingImage
           listingTitle={listingTitle}
@@ -326,9 +288,7 @@ const CheckoutPageWithPayment = props => {
           </div>
 
           <MobileOrderBreakdown
-            speculateTransactionErrorMessage={
-              errorMessages.speculateTransactionErrorMessage
-            }
+            speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
             breakdown={breakdown}
             priceVariantName={priceVariantName}
           />
@@ -340,17 +300,15 @@ const CheckoutPageWithPayment = props => {
             {errorMessages.retrievePaymentIntentErrorMessage}
             {errorMessages.paymentExpiredMessage}
 
-            {/* MODE CARTE (STRIPE) */}
             {chosenPaymentMethod === 'card' ? (
+              // --- MODE CARTE / STRIPE ---
               showPaymentSection ? (
                 <StripePaymentForm
                   className={css.paymentForm}
                   onSubmit={handleCardSubmit}
                   inProgress={submitting}
                   formId="CheckoutPagePaymentForm"
-                  authorDisplayName={
-                    listing?.author?.attributes?.profile?.displayName
-                  }
+                  authorDisplayName={listing?.author?.attributes?.profile?.displayName}
                   showInitialMessageInput={true}
                   initialValues={{}}
                   initiateOrderError={initiateOrderError}
@@ -359,10 +317,7 @@ const CheckoutPageWithPayment = props => {
                   hasHandledCardPayment={false}
                   loadingData={!stripeCustomerFetched}
                   defaultPaymentMethod={
-                    hasDefaultPaymentMethod(
-                      stripeCustomerFetched,
-                      currentUser
-                    )
+                    hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
                       ? currentUser.stripeCustomer.defaultPaymentMethod
                       : null
                   }
@@ -371,29 +326,19 @@ const CheckoutPageWithPayment = props => {
                     setStripeInstance(stripe);
                     return;
                   }}
-                  askShippingDetails={
-                    orderData?.deliveryMethod === 'shipping'
-                  }
-                  showPickUplocation={
-                    orderData?.deliveryMethod === 'pickup'
-                  }
-                  listingLocation={
-                    listing?.attributes?.publicData?.location
-                  }
+                  askShippingDetails={orderData?.deliveryMethod === 'shipping'}
+                  showPickUplocation={orderData?.deliveryMethod === 'pickup'}
+                  listingLocation={listing?.attributes?.publicData?.location}
                   totalPrice={totalPrice}
                   locale={config.localization.locale}
-                  stripePublishableKey={
-                    config.stripe.publishableKey
-                  }
+                  stripePublishableKey={config.stripe.publishableKey}
                   marketplaceName={config.marketplaceName}
-                  isBooking={isBookingProcessAlias(
-                    transactionProcessAlias
-                  )}
+                  isBooking={isBookingProcessAlias(transactionProcessAlias)}
                   isFuzzyLocation={config.maps.fuzzy.enabled}
                 />
               ) : null
             ) : (
-              // MODE CASH
+              // --- MODE CASH ---
               <>
                 <div className={css.fieldInquiryMessage}>
                   <p>
@@ -405,11 +350,7 @@ const CheckoutPageWithPayment = props => {
                 </div>
 
                 <div style={{ marginTop: 16 }}>
-                  <button
-                    className="button"
-                    disabled={submitting}
-                    onClick={handleCashSubmit}
-                  >
+                  <button className="button" disabled={submitting} onClick={handleCashSubmit}>
                     {submitting ? (
                       <FormattedMessage
                         id="CheckoutPage.sending"
@@ -435,9 +376,7 @@ const CheckoutPageWithPayment = props => {
           author={listing?.author}
           firstImage={firstImage}
           layoutListingImageConfig={config.layout.listingImage}
-          speculateTransactionErrorMessage={
-            errorMessages.speculateTransactionErrorMessage
-          }
+          speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
           isInquiryProcess={false}
           processName={processName}
           breakdown={breakdown}
@@ -488,8 +427,6 @@ CheckoutPageWithPayment.propTypes = {
   onSendMessage: propTypes.func.isRequired,
   onSavePaymentMethod: propTypes.func.isRequired,
   onSubmitCallback: propTypes.func.isRequired,
-  sessionStorageKey: propTypes.string.isRequired,
-  setPageData: propTypes.func.isRequired,
 };
 
 export default CheckoutPageWithPayment;
