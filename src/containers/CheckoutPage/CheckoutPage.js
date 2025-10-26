@@ -1,8 +1,9 @@
+// src/containers/CheckoutPage/CheckoutPage.js
 import React, { useEffect, useState } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
 import { useHistory } from 'react-router-dom';
-import { useIntl } from 'react-intl';
+import { useIntl, FormattedMessage } from 'react-intl';
 
 // Import contexts and util modules
 import { useConfiguration } from '../../context/configurationContext';
@@ -37,6 +38,7 @@ import {
   confirmPayment,
   sendMessage,
   initiateInquiryWithoutPayment,
+  initiateCashOrder, // NEW wrapper thunk in duck (see CheckoutPage.duck.js)
 } from './CheckoutPage.duck';
 
 import CustomTopbar from './CustomTopbar';
@@ -45,20 +47,96 @@ import CheckoutPageWithPayment, {
 } from './CheckoutPageWithPayment';
 import CheckoutPageWithInquiryProcess from './CheckoutPageWithInquiryProcess';
 
+import css from './CheckoutPage.module.css';
+
 const STORAGE_KEY = 'CheckoutPage';
 
 const onSubmitCallback = () => {
   clearData(STORAGE_KEY);
 };
 
+/**
+ * Modified getProcessName: now respects override from pageData.orderData.paymentMethod.
+ * If pageData.orderData.paymentMethod === 'cash' -> force 'reloue-booking-cash' base name.
+ * Otherwise fall back to existing behaviour.
+ */
 const getProcessName = pageData => {
-  const { transaction, listing } = pageData || {};
-  const processName = transaction?.id
-    ? transaction?.attributes?.processName
-    : listing?.id
-    ? listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0]
+  const { transaction, listing, orderData } = pageData || {};
+
+  // If transaction exists, use its processName
+  if (transaction?.id) {
+    const processName = transaction?.attributes?.processName;
+    return resolveLatestProcessName(processName);
+  }
+
+  const listingAlias = listing?.id
+    ? listing?.attributes?.publicData?.transactionProcessAlias
     : null;
-  return resolveLatestProcessName(processName);
+  const defaultProcessName = listingAlias ? listingAlias.split('/')[0] : null;
+
+  // OVERRIDE: if user chose cash, use the cash booking process name root
+  if (orderData?.paymentMethod === 'cash') {
+    // IMPORTANT: this must match the root name of the process you published in Flex:
+    // 'reloue-booking-cash/release-1' -> root name = 'reloue-booking-cash'
+    return resolveLatestProcessName('reloue-booking-cash');
+  }
+
+  return resolveLatestProcessName(defaultProcessName);
+};
+
+const PaymentMethodSelection = ({ pageData, setPageData }) => {
+  const paymentMethod = pageData?.orderData?.paymentMethod || null;
+
+  const setAndStore = (method) => {
+    const updatedPageData = {
+      ...pageData,
+      orderData: {
+        ...pageData.orderData,
+        paymentMethod: method,
+      },
+    };
+    setPageData(updatedPageData);
+    storeData(updatedPageData.orderData, updatedPageData.listing, updatedPageData.transaction, STORAGE_KEY);
+  };
+
+  return (
+    <div className={css.paymentMethodSelection}>
+      <h3 className={css.sectionHeading}><FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Choix du mode de paiement" /></h3>
+
+      <div className={css.field}>
+        <label>
+          <input
+            type="radio"
+            name="paymentMethod"
+            value="card"
+            checked={paymentMethod === 'card'}
+            onChange={() => setAndStore('card')}
+          />{' '}
+          <FormattedMessage id="CheckoutPage.paymentMethod.card" defaultMessage="Par carte (Stripe)" />
+        </label>
+      </div>
+
+      <div className={css.field}>
+        <label>
+          <input
+            type="radio"
+            name="paymentMethod"
+            value="cash"
+            checked={paymentMethod === 'cash'}
+            onChange={() => setAndStore('cash')}
+          />{' '}
+          <FormattedMessage id="CheckoutPage.paymentMethod.cash" defaultMessage="En espèces (paiement lors de la remise)" />
+        </label>
+      </div>
+
+      <p className={css.fieldInquiryMessage}>
+        <FormattedMessage
+          id="CheckoutPage.paymentMethod.description"
+          defaultMessage="Le prix est identique. Si vous choisissez « Espèces », aucune carte ne sera demandée : votre demande sera envoyée au propriétaire et les dates seront bloquées. Le propriétaire verra le mode de paiement indiqué."
+        />
+      </p>
+    </div>
+  );
 };
 
 const EnhancedCheckoutPage = props => {
@@ -118,21 +196,15 @@ const EnhancedCheckoutPage = props => {
   // Redirect if the user has no transaction rights
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
-    // - either when they first arrive on the checkout page
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      // - or when they are sending the order (if the operator removed transaction rights
-      // when they were already on the checkout page and the user has not refreshed the page)
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
-  // Redirect back to ListingPage if data is missing.
-  // Redirection must happen before any data format error is thrown (e.g. wrong currency)
   if (shouldRedirect) {
     // eslint-disable-next-line no-console
     console.error('Missing or invalid data for checkout, redirecting back to listing page.', {
       listing,
     });
     return <NamedRedirect name="ListingPage" params={params} />;
-    // Redirect to NoAccessPage if access rights are missing
   } else if (shouldRedirectUnathorizedUser) {
     return (
       <NamedRedirect
@@ -163,6 +235,25 @@ const EnhancedCheckoutPage = props => {
         { listingTitle, authorDisplayName }
       )
     : 'Checkout page is loading data';
+
+  // If user hasn't chosen paymentMethod yet, show selection UI (single page flow)
+  const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
+
+  if (!paymentMethodChosen) {
+    return (
+      <Page title={title} scrollingDisabled={scrollingDisabled}>
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+        <div className={css.contentContainer}>
+          <div className={css.orderFormContainer}>
+            <div className={css.headingContainer}>
+              <h1 className={css.heading}><FormattedMessage id="CheckoutPage.selectPaymentHeading" defaultMessage="Mode de paiement" /></h1>
+            </div>
+            <PaymentMethodSelection pageData={pageData} setPageData={setPageData} />
+          </div>
+        </div>
+      </Page>
+    );
+  }
 
   return processName && isInquiryProcess ? (
     <CheckoutPageWithInquiryProcess
@@ -247,6 +338,8 @@ const mapDispatchToProps = dispatch => ({
     dispatch(initiateInquiryWithoutPayment(params, processAlias, transitionName)),
   onInitiateOrder: (params, processAlias, transactionId, transitionName, isPrivileged) =>
     dispatch(initiateOrder(params, processAlias, transactionId, transitionName, isPrivileged)),
+  onInitiateCashOrder: (params, transactionId) =>
+    dispatch(initiateCashOrder(params, transactionId)), // NEW
   onRetrievePaymentIntent: params => dispatch(retrievePaymentIntent(params)),
   onConfirmCardPayment: params => dispatch(confirmCardPayment(params)),
   onConfirmPayment: (transactionId, transitionName, transitionParams) =>
