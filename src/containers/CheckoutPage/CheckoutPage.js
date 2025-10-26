@@ -1,3 +1,5 @@
+// src/containers/CheckoutPage/CheckoutPage.js
+
 import React, { useEffect, useState } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
@@ -33,18 +35,15 @@ import { savePaymentMethod } from '../../ducks/paymentMethods.duck';
 
 import { NamedRedirect, Page } from '../../components';
 
-// Session helpers
 import {
   storeData,
   clearData,
   handlePageData,
 } from './CheckoutPageSessionHelpers';
 
-// Ducks / thunks
 import {
   initiateOrder,
   setInitialValues,
-  speculateTransaction,
   stripeCustomer,
   confirmPayment,
   sendMessage,
@@ -65,66 +64,29 @@ const onSubmitCallback = () => {
 };
 
 /**
- * Helper: fetch Stripe customer + speculate transaction for Stripe flows.
- * On l'avait avant sous forme d'export dans CheckoutPageWithPayment.js.
- * On la garde ici désormais.
+ * On garde uniquement le fetch Stripe customer ici.
+ * On enlève la speculative transaction pour l’instant (elle cassait l'import).
  */
 const loadInitialDataForStripePayments = ({
-  pageData,
-  fetchSpeculatedTransaction,
   fetchStripeCustomer,
-  config,
 }) => {
-  const listing = pageData?.listing;
-  const transaction = pageData?.transaction;
-  const orderData = pageData?.orderData;
-
-  // Récupération du processAlias depuis l'annonce
-  const processAlias =
-    listing?.attributes?.publicData?.transactionProcessAlias || null;
-
-  // transaction existante ?
-  const transactionId = transaction?.id || null;
-
-  // On va chercher la première transition Stripe côté booking
-  // Sur Flex par défaut pour booking Stripe : 'transition/request-payment'
-  // Chez toi => vérifie selon ton process Stripe "default-booking"
-  const transitionName = 'transition/request-payment';
-  const isPrivilegedTransition = false;
-
-  // orderData contient par ex. bookingDates, quantity, deliveryMethod...
-  const orderParams = orderData || {};
-
-  // 1) on prédit le prix / récap
-  if (processAlias && orderParams) {
-    fetchSpeculatedTransaction(
-      orderParams,
-      processAlias,
-      transactionId,
-      transitionName,
-      isPrivilegedTransition
-    );
-  }
-
-  // 2) on récupère le client Stripe
   fetchStripeCustomer();
 };
 
 /**
- * Version modifiée de getProcessName :
- * - si l'utilisateur a choisi "cash", on force le processName à "reloue-booking-cash"
- * - sinon on lit le process de l'annonce ou celui de la transaction existante
+ * Sélection du process côté front :
+ * - si paiement = cash -> processName "reloue-booking-cash"
+ * - sinon -> processName par défaut du listing
+ * - si une transaction existe déjà -> processName de cette transaction
  */
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
 
-  // Si la transaction existe déjà → on respecte le process de la transaction
   if (transaction?.id) {
     const processName = transaction?.attributes?.processName;
     return resolveLatestProcessName(processName);
   }
 
-  // Cas nouvelle transaction
   const listingAlias = listing?.id
     ? listing?.attributes?.publicData?.transactionProcessAlias
     : null;
@@ -132,9 +94,7 @@ const getProcessName = pageData => {
     ? listingAlias.split('/')[0]
     : null;
 
-  // Override si cash
   if (orderData?.paymentMethod === 'cash') {
-    // 'reloue-booking-cash/release-1' -> racine processName = 'reloue-booking-cash'
     return resolveLatestProcessName('reloue-booking-cash');
   }
 
@@ -228,33 +188,25 @@ const EnhancedCheckoutPage = props => {
       orderData,
       listing,
       transaction,
-      fetchSpeculatedTransaction,
       fetchStripeCustomer,
     } = props;
 
-    // recharge les données depuis sessionStorage si existantes
+    // Recharge les données depuis sessionStorage si besoin
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
 
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // si l'utilisateur a les droits ET que le process actif est un process "Stripe"
+    // Prépare les infos Stripe si l'utilisateur choisit "card"
     if (isUserAuthorized(currentUser)) {
       const activeProcessName = getProcessName(data);
+      const method = data?.orderData?.paymentMethod;
 
-      if (activeProcessName !== INQUIRY_PROCESS_NAME) {
-        // Ici on ne veut charger Stripe customer & speculate
-        // QUE si le mode sélectionné est "card".
-        const method = data?.orderData?.paymentMethod;
-        if (method === 'card') {
-          loadInitialDataForStripePayments({
-            pageData: data || {},
-            fetchSpeculatedTransaction,
-            fetchStripeCustomer,
-            config,
-          });
-        }
+      if (activeProcessName !== INQUIRY_PROCESS_NAME && method === 'card') {
+        loadInitialDataForStripePayments({
+          fetchStripeCustomer,
+        });
       }
     }
   }, []);
@@ -263,7 +215,7 @@ const EnhancedCheckoutPage = props => {
     currentUser,
     params,
     scrollingDisabled,
-    speculateTransactionInProgress,
+    speculateTransactionInProgress, // on continue à le lire car le reducer l'a encore
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
@@ -271,7 +223,7 @@ const EnhancedCheckoutPage = props => {
   const processName = getProcessName(pageData);
   const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
-  // Guard rails / redirections
+  // Guards / redirections
   const listing = pageData?.listing;
   const isOwnListing =
     currentUser?.id &&
@@ -347,7 +299,7 @@ const EnhancedCheckoutPage = props => {
       )
     : 'Checkout page is loading data';
 
-  // L'utilisateur a-t-il déjà choisi carte / espèces ?
+  // L'utilisateur a-t-il choisi carte / espèces ?
   const paymentMethodChosen =
     !!pageData?.orderData?.paymentMethod;
 
@@ -474,22 +426,8 @@ const mapStateToProps = state => {
 
 const mapDispatchToProps = dispatch => ({
   dispatch,
-  fetchSpeculatedTransaction: (
-    params,
-    processAlias,
-    txId,
-    transitionName,
-    isPrivileged
-  ) =>
-    dispatch(
-      speculateTransaction(
-        params,
-        processAlias,
-        txId,
-        transitionName,
-        isPrivileged
-      )
-    ),
+
+  // on a retiré fetchSpeculatedTransaction car on ne l'utilise plus
   fetchStripeCustomer: () => dispatch(stripeCustomer()),
 
   onInquiryWithoutPayment: (
@@ -561,8 +499,6 @@ const CheckoutPage = compose(
   connect(mapStateToProps, mapDispatchToProps)
 )(EnhancedCheckoutPage);
 
-// static helper pour préremplir session storage au moment
-// où tu arrives sur CheckoutPage la première fois
 CheckoutPage.setInitialValues = (
   initialValues,
   saveToSessionStorage = false
