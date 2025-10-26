@@ -36,9 +36,6 @@ const StripePayoutPage = loadable(() => import(/* webpackChunkName: "StripePayou
 const TermsOfServicePage = loadable(() => import(/* webpackChunkName: "TermsOfServicePage" */ '../containers/TermsOfServicePage/TermsOfServicePage'));
 const TransactionPage = loadable(() => import(/* webpackChunkName: "TransactionPage" */ '../containers/TransactionPage/TransactionPage'));
 const NoAccessPage = loadable(() => import(/* webpackChunkName: "NoAccessPage" */ '../containers/NoAccessPage/NoAccessPage'));
-const CheckoutPaymentChoicePage = loadable(() => import(/* webpackChunkName: "CheckoutPaymentChoicePage" */ '../containers/CheckoutPaymentChoicePage/CheckoutPaymentChoicePage'));
-const CheckoutStripePage = loadable(() => import(/* webpackChunkName: "CheckoutStripePage" */ '../containers/CheckoutStripePage/CheckoutStripePage'));
-const CheckoutCashPage = loadable(() => import(/* webpackChunkName: "CheckoutCashPage" */ '../containers/CheckoutCashPage/CheckoutCashPage'));
 
 
 // Styleguide helps you to review current components and develop new ones
@@ -49,9 +46,6 @@ export const ACCOUNT_SETTINGS_PAGES = [
   'PasswordChangePage',
   'StripePayoutPage',
   'PaymentMethodsPage',
-  'CheckoutPaymentChoicePage',
-  'CheckoutStripePage',
-  'CheckoutCashPage',
 ];
 
 // https://en.wikipedia.org/wiki/Universally_unique_identifier#Nil_UUID
@@ -387,23 +381,6 @@ const routeConfiguration = (layoutConfig, accessControlConfig) => {
       path: '/notfound',
       name: 'NotFoundPage',
       component: props => <NotFoundPage {...props} />,
-    },
-
-    // New route for CheckOutPage via STRIPE or CASH
-    {
-      path: '/checkout/select-payment',
-      name: 'CheckoutPaymentChoicePage',
-      component: CheckoutPaymentChoicePage,
-    },
-    {
-      path: '/checkout/stripe',
-      name: 'CheckoutStripePage',
-      component: CheckoutStripePage,
-    },
-    {
-      path: '/checkout/cash',
-      name: 'CheckoutCashPage',
-      component: CheckoutCashPage,
     },
 
     // Do not change this path!
