@@ -15,42 +15,28 @@ import {
   hasPermissionToInitiateTransactions,
   isUserAuthorized,
 } from '../../util/userHelpers';
-import {
-  isErrorNoPermissionForInitiateTransactions,
-} from '../../util/errors';
-import {
-  INQUIRY_PROCESS_NAME,
-  resolveLatestProcessName,
-} from '../../transactions/transaction';
+import { isErrorNoPermissionForInitiateTransactions } from '../../util/errors';
+import { resolveLatestProcessName } from '../../transactions/transaction';
 import { requireListingImage } from '../../util/configHelpers';
 
 import { isScrollingDisabled } from '../../ducks/ui.duck';
-import {
-  confirmCardPayment,
-  retrievePaymentIntent,
-} from '../../ducks/stripe.duck';
+import { confirmCardPayment, retrievePaymentIntent } from '../../ducks/stripe.duck';
 import { savePaymentMethod } from '../../ducks/paymentMethods.duck';
 
 import { NamedRedirect, Page } from '../../components';
 
-import {
-  storeData,
-  clearData,
-  handlePageData,
-} from './CheckoutPageSessionHelpers';
+import { storeData, clearData, handlePageData } from './CheckoutPageSessionHelpers';
 
 import {
   initiateOrder,
   setInitialValues,
   confirmPayment,
   sendMessage,
-  initiateInquiryWithoutPayment,
   initiateCashOrder,
 } from './CheckoutPage.duck';
 
 import CustomTopbar from './CustomTopbar';
 import CheckoutPageWithPayment from './CheckoutPageWithPayment';
-import CheckoutPageWithInquiryProcess from './CheckoutPageWithInquiryProcess';
 
 import css from './CheckoutPage.module.css';
 
@@ -61,33 +47,44 @@ const onSubmitCallback = () => {
 };
 
 /**
- * Choix du process côté front :
- * - si paiement = cash -> processName "reloue-booking-cash"
- * - sinon -> processName par défaut du listing
- * - si une transaction existe déjà -> processName de cette transaction
+ * Choisit le process côté front :
+ *  - si paiement = cash -> processName 'reloue-booking-cash'
+ *  - sinon -> processName par défaut du listing (ex: 'default-booking')
+ *  - si transaction existe déjà -> processName de cette transaction
+ *
+ * Le "processName" (ex: "default-booking") est la partie avant "/release-1".
  */
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
 
+  // Si une transaction existe déjà -> on respecte son processName
   if (transaction?.id) {
     const processName = transaction?.attributes?.processName;
     return resolveLatestProcessName(processName);
   }
 
+  // Sinon on part du process attaché à l'annonce
   const listingAlias = listing?.id
-    ? listing?.attributes?.publicData?.transactionProcessAlias
-    : null;
-  const defaultProcessName = listingAlias
-    ? listingAlias.split('/')[0]
+    ? listing?.attributes?.publicData?.transactionProcessAlias // ex: "default-booking/release-1"
     : null;
 
+  const defaultProcessName = listingAlias ? listingAlias.split('/')[0] : null;
+
+  // Override si cash
   if (orderData?.paymentMethod === 'cash') {
+    // "reloue-booking-cash/release-1" => nom racine "reloue-booking-cash"
     return resolveLatestProcessName('reloue-booking-cash');
   }
 
+  // Sinon paiement carte Stripe -> process par défaut du listing (ex: default-booking)
   return resolveLatestProcessName(defaultProcessName);
 };
 
+/**
+ * Petit composant pour l'étape où l'utilisateur choisit CARTE ou ESPECES.
+ * On enregistre le choix dans pageData.orderData.paymentMethod,
+ * et on le persiste dans sessionStorage via storeData.
+ */
 const PaymentMethodSelection = ({ pageData, setPageData }) => {
   const paymentMethod = pageData?.orderData?.paymentMethod || null;
 
@@ -96,11 +93,12 @@ const PaymentMethodSelection = ({ pageData, setPageData }) => {
       ...pageData,
       orderData: {
         ...pageData.orderData,
-        paymentMethod: method,
+        paymentMethod: method, // 'card' ou 'cash'
       },
     };
 
     setPageData(updatedPageData);
+
     storeData(
       updatedPageData.orderData,
       updatedPageData.listing,
@@ -170,25 +168,18 @@ const EnhancedCheckoutPage = props => {
   const history = useHistory();
 
   useEffect(() => {
-    const {
-      currentUser,
-      orderData,
-      listing,
-      transaction,
-    } = props;
+    const { currentUser, orderData, listing, transaction } = props;
 
-    // Recharge les données (dates, listing, choix paiement...) depuis sessionStorage si existant
+    // Recharge les données (dates, mode de livraison, etc.) depuis sessionStorage si déjà existantes.
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
 
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // NOTE : on a retiré tout le préchargement Stripe (stripeCustomer etc.)
-    // pour éviter les imports manquants dans ton duck. Stripe tournera
-    // au moment du submit côté CheckoutPageWithPayment.handleCardSubmit.
+    // plus de préchargement Stripe ici -> Stripe se gère dans CheckoutPageWithPayment au moment du submit
     if (isUserAuthorized(currentUser)) {
-      // rien d'autre à faire ici pour l'instant
+      // rien de spécial ici pour l'instant
     }
   }, []);
 
@@ -197,18 +188,16 @@ const EnhancedCheckoutPage = props => {
     params,
     scrollingDisabled,
     speculateTransactionInProgress,
-    onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
 
   const processName = getProcessName(pageData);
-  const isInquiryProcess = processName === INQUIRY_PROCESS_NAME;
 
-  // Guards / redirections
+  // --- Guards & redirections ---
+
   const listing = pageData?.listing;
   const isOwnListing =
-    currentUser?.id &&
-    listing?.author?.id?.uuid === currentUser?.id?.uuid;
+    currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
 
   const hasRequiredData = !!(
     listing?.id &&
@@ -216,8 +205,7 @@ const EnhancedCheckoutPage = props => {
     processName
   );
 
-  const shouldRedirect =
-    isDataLoaded && !(hasRequiredData && !isOwnListing);
+  const shouldRedirect = isDataLoaded && !(hasRequiredData && !isOwnListing);
 
   const shouldRedirectUnauthorizedUser =
     isDataLoaded && !isUserAuthorized(currentUser);
@@ -225,9 +213,7 @@ const EnhancedCheckoutPage = props => {
   const shouldRedirectNoTransactionRightsUser =
     isDataLoaded &&
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      isErrorNoPermissionForInitiateTransactions(
-        initiateOrderError
-      ));
+      isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
   if (shouldRedirect) {
     console.error(
@@ -239,39 +225,27 @@ const EnhancedCheckoutPage = props => {
     return (
       <NamedRedirect
         name="NoAccessPage"
-        params={{
-          missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL,
-        }}
+        params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }}
       />
     );
   } else if (shouldRedirectNoTransactionRightsUser) {
     return (
       <NamedRedirect
         name="NoAccessPage"
-        params={{
-          missingAccessRight:
-            NO_ACCESS_PAGE_INITIATE_TRANSACTIONS,
-        }}
+        params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }}
       />
     );
   }
 
-  // Détails pour l'affichage
+  // Données d'affichage pour le sidecard
   const validListingTypes = config.listing.listingTypes;
   const foundListingTypeConfig = validListingTypes.find(
-    conf =>
-      conf.listingType ===
-      listing?.attributes?.publicData?.listingType
+    conf => conf.listingType === listing?.attributes?.publicData?.listingType
   );
-  const showListingImage = requireListingImage(
-    foundListingTypeConfig
-  );
+  const showListingImage = requireListingImage(foundListingTypeConfig);
 
   const listingTitle = listing?.attributes?.title;
-  const authorDisplayName = userDisplayNameAsString(
-    listing?.author,
-    ''
-  );
+  const authorDisplayName = userDisplayNameAsString(listing?.author, '');
 
   const title = processName
     ? intl.formatMessage(
@@ -280,20 +254,14 @@ const EnhancedCheckoutPage = props => {
       )
     : 'Checkout page is loading data';
 
-  // L'utilisateur a-t-il choisi carte / espèces ?
-  const paymentMethodChosen =
-    !!pageData?.orderData?.paymentMethod;
+  // L'utilisateur a-t-il choisi CARTE ou CASH ?
+  const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
 
   if (!paymentMethodChosen) {
+    // Étape 1 : affichage du choix de paiement
     return (
-      <Page
-        title={title}
-        scrollingDisabled={scrollingDisabled}
-      >
-        <CustomTopbar
-          intl={intl}
-          linkToExternalSite={config?.topbar?.logoLink}
-        />
+      <Page title={title} scrollingDisabled={scrollingDisabled}>
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <div className={css.orderFormContainer}>
             <div className={css.headingContainer}>
@@ -304,35 +272,15 @@ const EnhancedCheckoutPage = props => {
                 />
               </h1>
             </div>
-            <PaymentMethodSelection
-              pageData={pageData}
-              setPageData={setPageData}
-            />
+            <PaymentMethodSelection pageData={pageData} setPageData={setPageData} />
           </div>
         </div>
       </Page>
     );
   }
 
-  // rendu principal
-  return processName && isInquiryProcess ? (
-    <CheckoutPageWithInquiryProcess
-      config={config}
-      routeConfiguration={routeConfiguration}
-      intl={intl}
-      history={history}
-      processName={processName}
-      pageData={pageData}
-      listingTitle={listingTitle}
-      title={title}
-      onInquiryWithoutPayment={onInquiryWithoutPayment}
-      onSubmitCallback={onSubmitCallback}
-      showListingImage={showListingImage}
-      {...props}
-    />
-  ) : processName &&
-    !isInquiryProcess &&
-    !speculateTransactionInProgress ? (
+  // Étape 2 : rendu du checkout final (Stripe OU Cash)
+  return processName && !speculateTransactionInProgress ? (
     <CheckoutPageWithPayment
       config={config}
       routeConfiguration={routeConfiguration}
@@ -349,19 +297,13 @@ const EnhancedCheckoutPage = props => {
       {...props}
     />
   ) : (
-    <Page
-      title={title}
-      scrollingDisabled={scrollingDisabled}
-    >
-      <CustomTopbar
-        intl={intl}
-        linkToExternalSite={config?.topbar?.logoLink}
-      />
+    <Page title={title} scrollingDisabled={scrollingDisabled}>
+      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
     </Page>
   );
 };
 
-// === Redux wiring ===
+// =============== Redux connect ===============
 
 const mapStateToProps = state => {
   const {
@@ -373,17 +315,12 @@ const mapStateToProps = state => {
     speculatedTransaction,
     isClockInSync,
     transaction,
-    initiateInquiryError,
     initiateOrderError,
     confirmPaymentError,
   } = state.CheckoutPage;
 
   const { currentUser } = state.user;
-  const {
-    confirmCardPaymentError,
-    paymentIntent,
-    retrievePaymentIntentError,
-  } = state.stripe;
+  const { confirmCardPaymentError, paymentIntent, retrievePaymentIntentError } = state.stripe;
 
   return {
     scrollingDisabled: isScrollingDisabled(state),
@@ -396,7 +333,6 @@ const mapStateToProps = state => {
     isClockInSync,
     transaction,
     listing,
-    initiateInquiryError,
     initiateOrderError,
     confirmCardPaymentError,
     confirmPaymentError,
@@ -408,79 +344,31 @@ const mapStateToProps = state => {
 const mapDispatchToProps = dispatch => ({
   dispatch,
 
-  onInquiryWithoutPayment: (
-    params,
-    processAlias,
-    transitionName
-  ) =>
+  onInitiateOrder: (params, processAlias, transactionId, transitionName, isPrivileged) =>
     dispatch(
-      initiateInquiryWithoutPayment(
-        params,
-        processAlias,
-        transitionName
-      )
-    ),
-
-  onInitiateOrder: (
-    params,
-    processAlias,
-    transactionId,
-    transitionName,
-    isPrivileged
-  ) =>
-    dispatch(
-      initiateOrder(
-        params,
-        processAlias,
-        transactionId,
-        transitionName,
-        isPrivileged
-      )
+      initiateOrder(params, processAlias, transactionId, transitionName, isPrivileged)
     ),
 
   onInitiateCashOrder: (params, transactionId) =>
     dispatch(initiateCashOrder(params, transactionId)),
 
-  onRetrievePaymentIntent: params =>
-    dispatch(retrievePaymentIntent(params)),
+  onRetrievePaymentIntent: params => dispatch(retrievePaymentIntent(params)),
 
-  onConfirmCardPayment: params =>
-    dispatch(confirmCardPayment(params)),
+  onConfirmCardPayment: params => dispatch(confirmCardPayment(params)),
 
-  onConfirmPayment: (
-    transactionId,
-    transitionName,
-    transitionParams
-  ) =>
-    dispatch(
-      confirmPayment(
-        transactionId,
-        transitionName,
-        transitionParams
-      )
-    ),
+  onConfirmPayment: (transactionId, transitionName, transitionParams) =>
+    dispatch(confirmPayment(transactionId, transitionName, transitionParams)),
 
   onSendMessage: params => dispatch(sendMessage(params)),
-  onSavePaymentMethod: (
-    stripeCustomer,
-    stripePaymentMethodId
-  ) =>
-    dispatch(
-      savePaymentMethod(
-        stripeCustomer,
-        stripePaymentMethodId
-      )
-    ),
+  onSavePaymentMethod: (stripeCustomer, stripePaymentMethodId) =>
+    dispatch(savePaymentMethod(stripeCustomer, stripePaymentMethodId)),
 });
 
-const CheckoutPage = compose(
-  connect(mapStateToProps, mapDispatchToProps)
-)(EnhancedCheckoutPage);
+const CheckoutPage = compose(connect(mapStateToProps, mapDispatchToProps))(
+  EnhancedCheckoutPage
+);
 
-CheckoutPage.setInitialValues = (
-  initialValues,
-  saveToSessionStorage = false
-) => {
+CheckoutPage.setInitialValues = (initialValues, saveToSessionStorage = false) => {
   if (saveToSessionStorage) {
     const { listing, orderData } = initialValues;
     storeData(orderData, listing, null, STORAGE_KEY);
