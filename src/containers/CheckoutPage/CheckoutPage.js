@@ -1,5 +1,3 @@
-// src/containers/CheckoutPage/CheckoutPage.js
-
 import React, { useEffect, useState } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
@@ -44,7 +42,6 @@ import {
 import {
   initiateOrder,
   setInitialValues,
-  stripeCustomer,
   confirmPayment,
   sendMessage,
   initiateInquiryWithoutPayment,
@@ -64,17 +61,7 @@ const onSubmitCallback = () => {
 };
 
 /**
- * On garde uniquement le fetch Stripe customer ici.
- * On enlève la speculative transaction pour l’instant (elle cassait l'import).
- */
-const loadInitialDataForStripePayments = ({
-  fetchStripeCustomer,
-}) => {
-  fetchStripeCustomer();
-};
-
-/**
- * Sélection du process côté front :
+ * Choix du process côté front :
  * - si paiement = cash -> processName "reloue-booking-cash"
  * - sinon -> processName par défaut du listing
  * - si une transaction existe déjà -> processName de cette transaction
@@ -188,26 +175,20 @@ const EnhancedCheckoutPage = props => {
       orderData,
       listing,
       transaction,
-      fetchStripeCustomer,
     } = props;
 
-    // Recharge les données depuis sessionStorage si besoin
+    // Recharge les données (dates, listing, choix paiement...) depuis sessionStorage si existant
     const initialData = { orderData, listing, transaction };
     const data = handlePageData(initialData, STORAGE_KEY, history);
 
     setPageData(data || {});
     setIsDataLoaded(true);
 
-    // Prépare les infos Stripe si l'utilisateur choisit "card"
+    // NOTE : on a retiré tout le préchargement Stripe (stripeCustomer etc.)
+    // pour éviter les imports manquants dans ton duck. Stripe tournera
+    // au moment du submit côté CheckoutPageWithPayment.handleCardSubmit.
     if (isUserAuthorized(currentUser)) {
-      const activeProcessName = getProcessName(data);
-      const method = data?.orderData?.paymentMethod;
-
-      if (activeProcessName !== INQUIRY_PROCESS_NAME && method === 'card') {
-        loadInitialDataForStripePayments({
-          fetchStripeCustomer,
-        });
-      }
+      // rien d'autre à faire ici pour l'instant
     }
   }, []);
 
@@ -215,7 +196,7 @@ const EnhancedCheckoutPage = props => {
     currentUser,
     params,
     scrollingDisabled,
-    speculateTransactionInProgress, // on continue à le lire car le reducer l'a encore
+    speculateTransactionInProgress,
     onInquiryWithoutPayment,
     initiateOrderError,
   } = props;
@@ -275,7 +256,7 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
-  // Affichage image etc.
+  // Détails pour l'affichage
   const validListingTypes = config.listing.listingTypes;
   const foundListingTypeConfig = validListingTypes.find(
     conf =>
@@ -426,9 +407,6 @@ const mapStateToProps = state => {
 
 const mapDispatchToProps = dispatch => ({
   dispatch,
-
-  // on a retiré fetchSpeculatedTransaction car on ne l'utilise plus
-  fetchStripeCustomer: () => dispatch(stripeCustomer()),
 
   onInquiryWithoutPayment: (
     params,
