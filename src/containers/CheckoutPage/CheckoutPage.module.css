@@ -459,5 +459,25 @@
   margin-top: 20px;
 }
 
-.paymentMethodSelection { padding: 24px; }
-.field { margin: 12px 0; }
+.paymentMethodSelection {
+  padding: 24px 0;
+  border-top: 1px solid var(--colorGrey100);
+  border-bottom: 1px solid var(--colorGrey100);
+}
+
+.sectionHeading {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.field {
+  margin: 12px 0;
+}
+
+.fieldInquiryMessage {
+  margin-top: 16px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--colorGrey700);
+}
