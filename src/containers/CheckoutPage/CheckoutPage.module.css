@@ -458,3 +458,6 @@
 .incompatibleCurrency {
   margin-top: 20px;
 }
+
+.paymentMethodSelection { padding: 24px; }
+.field { margin: 12px 0; }
