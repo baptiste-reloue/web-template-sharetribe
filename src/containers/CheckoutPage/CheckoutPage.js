@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { useIntl, FormattedMessage } from 'react-intl';
 
 import { useConfiguration } from '../../context/configurationContext';
@@ -12,10 +12,7 @@ import {
   NO_ACCESS_PAGE_USER_PENDING_APPROVAL,
   createSlug,
 } from '../../util/urlHelpers';
-import {
-  hasPermissionToInitiateTransactions,
-  isUserAuthorized,
-} from '../../util/userHelpers';
+import { hasPermissionToInitiateTransactions, isUserAuthorized } from '../../util/userHelpers';
 import { isErrorNoPermissionForInitiateTransactions } from '../../util/errors';
 import { resolveLatestProcessName } from '../../transactions/transaction';
 import { requireListingImage } from '../../util/configHelpers';
@@ -42,40 +39,50 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const DEFAULT_PROCESS_KEY = 'default-booking'; // fallback sûr
+const DEFAULT_PROCESS_KEY = 'default-booking';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
+
+// -------- helpers URL <-> state ----------
+const getSearchParams = location => new URLSearchParams(location.search || '');
+const setSearchParam = (history, location, key, value) => {
+  const sp = getSearchParams(location);
+  if (value == null) sp.delete(key);
+  else sp.set(key, value);
+  history.replace({ ...location, search: sp.toString() });
+};
+// -----------------------------------------
 
 // Ne renvoie jamais null/undefined
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
 
-  // 1) Transaction existante
   const txProc = transaction?.attributes?.processName;
   if (txProc) return resolveLatestProcessName(txProc);
 
-  // 2) CASH: forcer le process cash
   if (orderData?.paymentMethod === 'cash') {
     return resolveLatestProcessName('reloue-booking-cash');
   }
 
-  // 3) Alias d’annonce ou fallback
   const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
-
   return resolveLatestProcessName(key);
 };
 
 // Écran choix paiement (2 boutons + retour en bas)
-const PaymentMethodButtons = ({ pageData, setPageData }) => {
+const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
   const listing = pageData?.listing;
 
-  const setAndStore = method => {
+  const choose = method => {
+    // 1) maj état local + session
     const updated = {
       ...pageData,
       orderData: { ...(pageData.orderData || {}), paymentMethod: method }, // 'card' | 'cash'
     };
     setPageData(updated);
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
+
+    // 2) maj URL pour éviter tout retour à l'ancien écran (remount, refresh, nav)
+    setSearchParam(history, location, 'method', method);
   };
 
   return (
@@ -85,18 +92,10 @@ const PaymentMethodButtons = ({ pageData, setPageData }) => {
       </h3>
 
       <div className={css.paymentButtonsRow}>
-        <button
-          type="button"
-          className={`button ${css.choiceButton}`}
-          onClick={() => setAndStore('card')}
-        >
+        <button type="button" className={`button ${css.choiceButton}`} onClick={() => choose('card')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.card" defaultMessage="Payer par carte" />
         </button>
-        <button
-          type="button"
-          className={`button ${css.choiceButton}`}
-          onClick={() => setAndStore('cash')}
-        >
+        <button type="button" className={`button ${css.choiceButton}`} onClick={() => choose('cash')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.cash" defaultMessage="Payer en espèces" />
         </button>
       </div>
@@ -132,19 +131,36 @@ const EnhancedCheckoutPage = props => {
   const routeConfiguration = useRouteConfiguration();
   const intl = useIntl();
   const history = useHistory();
+  const location = useLocation();
 
-  // Charger données (Redux/session) au montage
+  // 1) Charger données (Redux/session) au montage
   useEffect(() => {
     const { orderData, listing, transaction } = props;
-    const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history);
-    setPageData(data || {});
+    const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history) || {};
+    // 2) Lire ?method=... si présent et l’injecter
+    const methodFromUrl = getSearchParams(location).get('method');
+    const normalized =
+      methodFromUrl === 'card' || methodFromUrl === 'cash' ? methodFromUrl : (data.orderData || {}).paymentMethod;
+
+    const merged = normalized
+      ? { ...data, orderData: { ...(data.orderData || {}), paymentMethod: normalized } }
+      : data;
+
+    // Persister pour que le remount relise la même info
+    if (normalized) {
+      storeData(merged.orderData, merged.listing, merged.transaction, STORAGE_KEY);
+    }
+
+    setPageData(merged);
     setIsDataLoaded(true);
-  }, []); // volontairement vide
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // une seule fois
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
   const processName = getProcessName(pageData); // jamais null
   const listing = pageData?.listing;
+  const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
 
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
 
@@ -154,10 +170,7 @@ const EnhancedCheckoutPage = props => {
   }
   if (isDataLoaded && !isUserAuthorized(currentUser)) {
     return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }}
-      />
+      <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }} />
     );
   }
   if (
@@ -166,10 +179,7 @@ const EnhancedCheckoutPage = props => {
       isErrorNoPermissionForInitiateTransactions(initiateOrderError))
   ) {
     return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }}
-      />
+      <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }} />
     );
   }
 
@@ -181,12 +191,7 @@ const EnhancedCheckoutPage = props => {
   const listingTitle = listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
   const safeProcessKey = processName || DEFAULT_PROCESS_KEY;
-  const title = intl.formatMessage(
-    { id: `CheckoutPage.${safeProcessKey}.title` },
-    { listingTitle, authorDisplayName }
-  );
-
-  const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
+  const title = intl.formatMessage({ id: `CheckoutPage.${safeProcessKey}.title` }, { listingTitle, authorDisplayName });
 
   if (!paymentMethodChosen) {
     return (
@@ -194,7 +199,12 @@ const EnhancedCheckoutPage = props => {
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <div className={css.orderFormContainer}>
-            <PaymentMethodButtons pageData={pageData} setPageData={setPageData} />
+            <PaymentMethodButtons
+              pageData={pageData}
+              setPageData={setPageData}
+              history={history}
+              location={location}
+            />
           </div>
         </div>
       </Page>
