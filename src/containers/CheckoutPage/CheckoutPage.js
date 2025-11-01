@@ -42,40 +42,27 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
+const onSubmitCallback = () => clearData(STORAGE_KEY);
 
-const onSubmitCallback = () => {
-  clearData(STORAGE_KEY);
-};
-
-// Détermine le process pour le titrage/affichages
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
-
-  if (transaction?.id) {
-    return resolveLatestProcessName(transaction?.attributes?.processName);
-  }
+  if (transaction?.id) return resolveLatestProcessName(transaction?.attributes?.processName);
 
   const listingAlias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const defaultProcessName = listingAlias ? listingAlias.split('/')[0] : null;
 
-  if (orderData?.paymentMethod === 'cash') {
-    return resolveLatestProcessName('reloue-booking-cash');
-  }
+  if (orderData?.paymentMethod === 'cash') return resolveLatestProcessName('reloue-booking-cash');
   return resolveLatestProcessName(defaultProcessName);
 };
 
-// UI — 2 boutons identiques + bouton Retour à l’annonce
-const PaymentMethodButtons = ({ pageData, setPageData, listing, routeConfiguration }) => {
+const PaymentMethodButtons = ({ pageData, setPageData, listing }) => {
   const setAndStore = method => {
-    const updatedPageData = {
+    const updated = {
       ...pageData,
-      orderData: {
-        ...(pageData.orderData || {}),
-        paymentMethod: method, // 'card' | 'cash'
-      },
+      orderData: { ...(pageData.orderData || {}), paymentMethod: method },
     };
-    setPageData(updatedPageData);
-    storeData(updatedPageData.orderData, updatedPageData.listing, updatedPageData.transaction, STORAGE_KEY);
+    setPageData(updated);
+    storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
   };
 
   const listingId = listing?.id?.uuid;
@@ -83,13 +70,9 @@ const PaymentMethodButtons = ({ pageData, setPageData, listing, routeConfigurati
 
   return (
     <div className={css.paymentMethodSelection}>
-      {/* Bouton retour à l’annonce */}
+      {/* Retour à l'annonce */}
       <div style={{ marginBottom: 12 }}>
-        <NamedLink
-          name="ListingPage"
-          params={{ id: listingId, slug: listingSlug }}
-          className="buttonSecondary"
-        >
+        <NamedLink name="ListingPage" params={{ id: listingId, slug: listingSlug }} className="buttonSecondary">
           <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
         </NamedLink>
       </div>
@@ -102,7 +85,6 @@ const PaymentMethodButtons = ({ pageData, setPageData, listing, routeConfigurati
         <button type="button" className="button" onClick={() => setAndStore('card')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.card" defaultMessage="Payer par carte" />
         </button>
-
         <button type="button" className="button" onClick={() => setAndStore('cash')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.cash" defaultMessage="Payer en espèces" />
         </button>
@@ -132,7 +114,7 @@ const EnhancedCheckoutPage = props => {
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
-  }, []);
+  }, []); // volontairement vide
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
@@ -142,43 +124,28 @@ const EnhancedCheckoutPage = props => {
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
   const hasRequiredData = !!(listing?.id && listing?.author?.id && processName);
 
-  const shouldRedirect = isDataLoaded && !(hasRequiredData && !isOwnListing);
-  const shouldRedirectUnauthorizedUser = isDataLoaded && !isUserAuthorized(currentUser);
-  const shouldRedirectNoTransactionRightsUser =
+  if (isDataLoaded && !(hasRequiredData && !isOwnListing)) {
+    return <NamedRedirect name="ListingPage" params={params} />;
+  }
+  if (isDataLoaded && !isUserAuthorized(currentUser)) {
+    return <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }} />;
+  }
+  if (
     isDataLoaded &&
     (!hasPermissionToInitiateTransactions(currentUser) ||
-      isErrorNoPermissionForInitiateTransactions(initiateOrderError));
-
-  if (shouldRedirect) {
-    return <NamedRedirect name="ListingPage" params={params} />;
-  } else if (shouldRedirectUnauthorizedUser) {
-    return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }}
-      />
-    );
-  } else if (shouldRedirectNoTransactionRightsUser) {
-    return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }}
-      />
-    );
+      isErrorNoPermissionForInitiateTransactions(initiateOrderError))
+  ) {
+    return <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }} />;
   }
 
-  const validListingTypes = config.listing.listingTypes;
-  const foundListingTypeConfig = validListingTypes.find(
+  const foundListingTypeConfig = config.listing.listingTypes.find(
     conf => conf.listingType === listing?.attributes?.publicData?.listingType
   );
   const showListingImage = requireListingImage(foundListingTypeConfig);
 
   const listingTitle = listing?.attributes?.title;
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
-  const title = intl.formatMessage(
-    { id: `CheckoutPage.${processName}.title` },
-    { listingTitle, authorDisplayName }
-  );
+  const title = intl.formatMessage({ id: `CheckoutPage.${processName}.title` }, { listingTitle, authorDisplayName });
 
   const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
 
@@ -188,12 +155,7 @@ const EnhancedCheckoutPage = props => {
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <div className={css.orderFormContainer}>
-            <PaymentMethodButtons
-              pageData={pageData}
-              setPageData={setPageData}
-              listing={listing}
-              routeConfiguration={routeConfiguration}
-            />
+            <PaymentMethodButtons pageData={pageData} setPageData={setPageData} listing={listing} />
           </div>
         </div>
       </Page>
@@ -202,7 +164,7 @@ const EnhancedCheckoutPage = props => {
 
   return (
     <CheckoutPageWithPayment
-      key={pageData?.orderData?.paymentMethod || 'no-method'} // force remount si on change de mode
+      key={pageData?.orderData?.paymentMethod || 'no-method'}
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
@@ -221,7 +183,6 @@ const EnhancedCheckoutPage = props => {
 };
 
 // Redux
-
 const mapStateToProps = state => {
   const { listing, orderData, transaction, initiateOrderError } = state.CheckoutPage;
   const { currentUser } = state.user;
@@ -242,10 +203,8 @@ const mapStateToProps = state => {
 
 const mapDispatchToProps = dispatch => ({
   dispatch,
-
   onInitiateOrder: (params, alias, txId, transition, isPriv) =>
     dispatch(initiateOrder(params, alias, txId, transition, isPriv)),
-
   onInitiateCashOrder: (params, txId) => dispatch(initiateCashOrder(params, txId)),
   onRetrievePaymentIntent: params => dispatch(retrievePaymentIntent(params)),
   onConfirmCardPayment: params => dispatch(confirmCardPayment(params)),
