@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FormattedMessage } from '../../util/reactIntl';
 import { pathByRouteName } from '../../util/routes';
 import { propTypes } from '../../util/types';
@@ -9,7 +9,7 @@ import { getProcess, isBookingProcessAlias } from '../../transactions/transactio
 
 import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
 
-// On garde uniquement des imports sûrs depuis le helper
+// Imports "sûrs"
 import { getFormattedTotalPrice, hasDefaultPaymentMethod } from './CheckoutPageTransactionHelpers.js';
 
 import CustomTopbar from './CustomTopbar';
@@ -20,7 +20,7 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-/* Helpers localisés (pour ne pas dépendre d'exports manquants) */
+/* Helpers localisés */
 const hasPaymentExpiredLocal = () => false;
 const hasTransactionPassedPendingPaymentLocal = () => false;
 const processCheckoutWithPaymentLocal = async () => Promise.resolve(null);
@@ -33,7 +33,7 @@ const getErrorMessagesLocal = () => ({
   speculateTransactionErrorMessage: null,
 });
 
-/* Construit les params envoyés à Flex (remplace l’ancien getOrderParams) */
+// Construit les params envoyés à Flex
 const buildOrderParamsLocal = (pageData, optionalPaymentParams = {}) => {
   const { orderData = {}, listing } = pageData || {};
   const { bookingDates, quantity, deliveryMethod, paymentMethod } = orderData;
@@ -93,6 +93,7 @@ const CheckoutPageWithPayment = props => {
     onConfirmPayment,
     onSendMessage,
     onSavePaymentMethod,
+    onRetrievePaymentIntent, // <-- on l'utilise pour forcer la récup du PI
 
     onSubmitCallback,
     sessionStorageKey,
@@ -146,14 +147,22 @@ const CheckoutPageWithPayment = props => {
 
   const transactionId = existingTransaction?.id || null;
 
-  // — Bouton "Changer de mode" : efface le choix et revient au sélecteur —
+  // --- Forcer la récup du PaymentIntent quand "carte" est choisi ---
+  useEffect(() => {
+    if (chosenPaymentMethod === 'card' && listing?.id && !retrievePaymentIntentError) {
+      // On passe le strict minimum : le thunk du template sait quoi récupérer
+      onRetrievePaymentIntent({ listingId: listing.id, processName });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosenPaymentMethod, listing?.id, processName]);
+
+  // --- Bouton "Changer de mode" placé AVANT le titre ---
   const handleChangeMethod = () => {
     const updated = {
       ...pageData,
       orderData: { ...(pageData.orderData || {}), paymentMethod: null },
     };
     setPageData(updated);
-    // on n'efface pas le session storage: revenir en arrière doit conserver les dates
   };
 
   // --- CASH ---
@@ -231,7 +240,7 @@ const CheckoutPageWithPayment = props => {
 
   const firstImage = listing?.images && listing.images.length > 0 ? listing.images[0] : null;
 
-  // ⚠️ Simplification volontaire : on affiche Stripe dès que "carte" est choisi.
+  // Affiche Stripe dès que "carte" est choisi.
   const showStripe = chosenPaymentMethod === 'card' && !listingNotFound;
 
   return (
@@ -239,29 +248,29 @@ const CheckoutPageWithPayment = props => {
       <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
 
       <div className={css.contentContainer}>
-        {/* Image mobile */}
-        <MobileListingImage
-          listingTitle={listingTitle}
-          author={listing?.author}
-          firstImage={firstImage}
-          layoutListingImageConfig={config.layout.listingImage}
-          showListingImage={showListingImage}
-        />
-
         {/* Colonne gauche */}
         <div className={css.orderFormContainer}>
+          {/* BOUTON CHANGER DE MODE — AVANT le titre */}
+          <div style={{ marginBottom: 12 }}>
+            <button type="button" className="buttonSecondary" onClick={handleChangeMethod}>
+              <FormattedMessage id="CheckoutPage.changePayment" defaultMessage="⟵ Changer de mode de paiement" />
+            </button>
+          </div>
+
+          {/* Image mobile */}
+          <MobileListingImage
+            listingTitle={listingTitle}
+            author={listing?.author}
+            firstImage={firstImage}
+            layoutListingImageConfig={config.layout.listingImage}
+            showListingImage={showListingImage}
+          />
+
           <div className={css.headingContainer}>
             <H3 as="h1" className={css.heading}>{title}</H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
               <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
-          </div>
-
-          {/* Bouton retour / changer de mode */}
-          <div style={{ marginBottom: 12 }}>
-            <button type="button" className="buttonSecondary" onClick={handleChangeMethod}>
-              <FormattedMessage id="CheckoutPage.changePayment" defaultMessage="⟵ Changer de mode de paiement" />
-            </button>
           </div>
 
           <MobileOrderBreakdown
@@ -271,9 +280,9 @@ const CheckoutPageWithPayment = props => {
           />
 
           <section className={css.paymentContainer}>
-            {/* Affichage Stripe si "carte" */}
             {showStripe ? (
               <StripePaymentForm
+                key="stripe-form"                 // force un montage propre
                 className={css.paymentForm}
                 onSubmit={handleCardSubmit}
                 inProgress={submitting}
@@ -285,7 +294,7 @@ const CheckoutPageWithPayment = props => {
                 confirmCardPaymentError={confirmCardPaymentError}
                 confirmPaymentError={confirmPaymentError}
                 hasHandledCardPayment={false}
-                loadingData={!stripeCustomerFetched}
+                loadingData={false}               // on ne bloque plus l'affichage
                 defaultPaymentMethod={
                   hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
                     ? currentUser.stripeCustomer.defaultPaymentMethod
@@ -390,9 +399,10 @@ CheckoutPageWithPayment.propTypes = {
   onConfirmPayment: propTypes.func.isRequired,
   onSendMessage: propTypes.func.isRequired,
   onSavePaymentMethod: propTypes.func.isRequired,
+  onRetrievePaymentIntent: propTypes.func.isRequired,
   onSubmitCallback: propTypes.func.isRequired,
   sessionStorageKey: propTypes.string.isRequired,
   setPageData: propTypes.func.isRequired,
 };
 
-export default CheckoutPageWithPayment;
+export default CheckoutPageWithPayment
