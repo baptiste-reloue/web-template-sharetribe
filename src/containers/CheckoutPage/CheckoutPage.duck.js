@@ -15,7 +15,6 @@ const initialState = {
   listing: null,
   orderData: {},
   transaction: null,
-
   initiateOrderError: null,
   confirmPaymentError: null,
 };
@@ -31,12 +30,8 @@ export const setInitialValues = values => ({
 /***************************************************************
  * Thunks
  ***************************************************************/
-
-/**
- * Initiate or transition a transaction
- */
 export const initiateOrder =
-  (orderParams, processAlias, transactionId, transitionName, isPrivilegedTransition = false) =>
+  (orderParams, processAlias, transactionId, transitionName, isPrivileged = false) =>
   (dispatch, getState, sdk) => {
     dispatch({ type: INITIATE_ORDER_REQUEST });
 
@@ -44,15 +39,15 @@ export const initiateOrder =
       ? { id: transactionId, transition: transitionName, params: orderParams }
       : { processAlias, transition: transitionName, params: orderParams };
 
-    const request = transactionId
-      ? isPrivilegedTransition
+    const req = transactionId
+      ? isPrivileged
         ? sdk.transactions.transitionPrivileged(bodyParams)
         : sdk.transactions.transition(bodyParams)
-      : isPrivilegedTransition
+      : isPrivileged
       ? sdk.transactions.initiatePrivileged(bodyParams)
       : sdk.transactions.initiate(bodyParams);
 
-    return request
+    return req
       .then(res => {
         dispatch({ type: INITIATE_ORDER_SUCCESS, payload: res.data });
         return res;
@@ -63,58 +58,41 @@ export const initiateOrder =
       });
   };
 
-/***************************************************************
- * Cash booking flow
- ***************************************************************/
+/** CASH */
 const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
-// ⚠️ Vérifie dans la console Flex le nom exact de ta première transition :
+// ⚠️ Mets ici le nom EXACT de la première transition de ton process cash
 const CASH_INITIAL_TRANSITION = 'transition/request';
 
 export const initiateCashOrder = (orderParams, transactionId) => (dispatch, getState, sdk) => {
-  const paramsWithPaymentFlag = {
+  const params = {
     ...orderParams,
     protectedData: {
       ...(orderParams?.protectedData || {}),
       paymentMethod: 'cash',
     },
   };
-
   return dispatch(
-    initiateOrder(
-      paramsWithPaymentFlag,
-      CASH_PROCESS_ALIAS,
-      transactionId,
-      CASH_INITIAL_TRANSITION,
-      false
-    )
+    initiateOrder(params, CASH_PROCESS_ALIAS, transactionId, CASH_INITIAL_TRANSITION, false)
   );
 };
 
-/***************************************************************
- * Confirm payment (Stripe)
- ***************************************************************/
 export const confirmPayment =
-  (transactionId, transitionName, transitionParams = {}) =>
-  (dispatch, getState, sdk) => {
-    return sdk.transactions
-      .transition({ id: transactionId, transition: transitionName, params: transitionParams })
+  (transactionId, transitionName, params = {}) =>
+  (dispatch, getState, sdk) =>
+    sdk.transactions
+      .transition({ id: transactionId, transition: transitionName, params })
       .then(r => r)
       .catch(e => {
         throw storableError(e);
       });
-  };
 
-/***************************************************************
- * Send message
- ***************************************************************/
-export const sendMessage = params => (dispatch, getState, sdk) => {
-  return sdk.messages
+export const sendMessage = params => (dispatch, getState, sdk) =>
+  sdk.messages
     .send(params)
     .then(r => r)
     .catch(e => {
       throw storableError(e);
     });
-};
 
 /***************************************************************
  * Reducer
@@ -136,22 +114,13 @@ export default function reducer(state = initialState, action = {}) {
     }
 
     case INITIATE_ORDER_REQUEST:
-      return {
-        ...state,
-        initiateOrderError: null,
-      };
+      return { ...state, initiateOrderError: null };
 
     case INITIATE_ORDER_SUCCESS:
-      return {
-        ...state,
-        transaction: payload?.data || null,
-      };
+      return { ...state, transaction: payload?.data || null };
 
     case INITIATE_ORDER_ERROR:
-      return {
-        ...state,
-        initiateOrderError: error,
-      };
+      return { ...state, initiateOrderError: error };
 
     default:
       return state;
