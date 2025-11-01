@@ -4,25 +4,24 @@ import { connect } from 'react-redux';
 import { useIntl, FormattedMessage } from 'react-intl';
 import { useHistory } from 'react-router-dom';
 
-import { useConfiguration } from '../../context/configurationContext';
-import { useRouteConfiguration } from '../../context/routeConfigurationContext';
-import { propTypes } from '../../util/types';
-import { ensureTransaction, userDisplayNameAsString } from '../../util/data';
-import { pathByRouteName } from '../../util/routes';
-import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
+import { useConfiguration } from '../../../context/configurationContext';
+import { useRouteConfiguration } from '../../../context/routeConfigurationContext';
+import { propTypes } from '../../../util/types';
+import { ensureTransaction, userDisplayNameAsString } from '../../../util/data';
+import { pathByRouteName } from '../../../util/routes';
 
-import { Page, H3, H4, NamedLink, OrderBreakdown } from '../../components';
+import { Page, H3, H4, OrderBreakdown } from '../../../components';
 
-import { storeData, handlePageData } from '../CheckoutPage/CheckoutPageSessionHelpers';
-import { initiateCashOrder, setInitialValues as setInitialValuesDuck } from '../CheckoutPage/CheckoutPage.duck';
-import { getFormattedTotalPrice } from '../CheckoutPage/CheckoutPageTransactionHelpers';
+import { storeData, handlePageData } from '../CheckoutPageSessionHelpers';
+import { initiateCashOrder, setInitialValues as setInitialValuesDuck } from '../CheckoutPage.duck';
+import { getFormattedTotalPrice } from '../CheckoutPageTransactionHelpers';
 
-import CustomTopbar from '../CheckoutPage/CustomTopbar';
-import DetailsSideCard from '../CheckoutPage/DetailsSideCard';
-import MobileListingImage from '../CheckoutPage/MobileListingImage';
-import MobileOrderBreakdown from '../CheckoutPage/MobileOrderBreakdown';
+import CustomTopbar from '../CustomTopbar';
+import DetailsSideCard from '../DetailsSideCard';
+import MobileListingImage from '../MobileListingImage';
+import MobileOrderBreakdown from '../MobileOrderBreakdown';
 
-import css from '../CheckoutPage/CheckoutPage.module.css';
+import css from '../CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
 const PROCESS_KEY = 'reloue-booking-cash';
@@ -58,7 +57,6 @@ const CheckoutCashPageComponent = props => {
     orderData,
     listing,
     transaction,
-    dispatch,
     onInitiateCashOrder,
   } = props;
 
@@ -89,7 +87,6 @@ const CheckoutCashPageComponent = props => {
 
   const existingTx = ensureTransaction(pageData?.transaction);
   const timeZone = pageData?.listing?.attributes?.availabilityPlan?.timezone;
-  const process = getProcess(PROCESS_KEY);
 
   const breakdown =
     existingTx?.id && existingTx?.attributes?.lineItems?.length > 0 ? (
@@ -125,18 +122,18 @@ const CheckoutCashPageComponent = props => {
               })
         );
       })
-      .catch(err => {
-        // tu peux logger si besoin
-      })
+      .catch(() => {})
       .finally(() => setSubmitting(false));
   };
 
-  // Changer de mode → retour à l'écran de choix
+  // Changer de mode → retour à l'écran de choix (CheckoutPage)
   const handleChangeMode = () => {
     history.replace(
       pathByRouteName('CheckoutPage', routeConfiguration, {
         id: pageData?.listing?.id?.uuid,
-        slug: pageData?.listing ? pageData.listing.attributes.title.toLowerCase().replace(/\s+/g, '-') : 'item',
+        slug: pageData?.listing
+          ? pageData.listing.attributes.title.toLowerCase().replace(/\s+/g, '-')
+          : 'item',
       })
     );
   };
@@ -281,7 +278,6 @@ const mapStateToProps = state => {
 };
 
 const mapDispatchToProps = dispatch => ({
-  dispatch,
   onInitiateCashOrder: (params, txId) => dispatch(initiateCashOrder(params, txId)),
   setInitialValues: v => dispatch(setInitialValuesDuck(v)),
 });
