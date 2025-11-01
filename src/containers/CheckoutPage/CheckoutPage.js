@@ -10,8 +10,8 @@ import { userDisplayNameAsString } from '../../util/data';
 import {
   NO_ACCESS_PAGE_INITIATE_TRANSACTIONS,
   NO_ACCESS_PAGE_USER_PENDING_APPROVAL,
+  createSlug,
 } from '../../util/urlHelpers';
-import { createSlug } from '../../util/urlHelpers';
 import {
   hasPermissionToInitiateTransactions,
   isUserAuthorized,
@@ -47,15 +47,15 @@ const onSubmitCallback = () => clearData(STORAGE_KEY);
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
   if (transaction?.id) return resolveLatestProcessName(transaction?.attributes?.processName);
-
   const listingAlias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const defaultProcessName = listingAlias ? listingAlias.split('/')[0] : null;
-
   if (orderData?.paymentMethod === 'cash') return resolveLatestProcessName('reloue-booking-cash');
   return resolveLatestProcessName(defaultProcessName);
 };
 
-const PaymentMethodButtons = ({ pageData, setPageData, listing }) => {
+// Écran de sélection: deux boutons identiques + retour à l’annonce
+const PaymentMethodButtons = ({ pageData, setPageData }) => {
+  const listing = pageData?.listing;
   const setAndStore = method => {
     const updated = {
       ...pageData,
@@ -64,15 +64,14 @@ const PaymentMethodButtons = ({ pageData, setPageData, listing }) => {
     setPageData(updated);
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
   };
-
-  const listingId = listing?.id?.uuid;
-  const listingSlug = createSlug(listing?.attributes?.title || '');
-
   return (
     <div className={css.paymentMethodSelection}>
-      {/* Retour à l'annonce */}
       <div style={{ marginBottom: 12 }}>
-        <NamedLink name="ListingPage" params={{ id: listingId, slug: listingSlug }} className="buttonSecondary">
+        <NamedLink
+          name="ListingPage"
+          params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
+          className="buttonSecondary"
+        >
           <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
         </NamedLink>
       </div>
@@ -109,12 +108,13 @@ const EnhancedCheckoutPage = props => {
   const intl = useIntl();
   const history = useHistory();
 
+  // Lire les données (sessionStorage/Redux) au montage
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
-  }, []); // volontairement vide
+  }, []); // eslint ok
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
@@ -122,20 +122,30 @@ const EnhancedCheckoutPage = props => {
   const listing = pageData?.listing;
 
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
-  const hasRequiredData = !!(listing?.id && listing?.author?.id && processName);
 
-  if (isDataLoaded && !(hasRequiredData && !isOwnListing)) {
+  // Redirections strictement nécessaires
+  if (isDataLoaded && isOwnListing) {
     return <NamedRedirect name="ListingPage" params={params} />;
   }
   if (isDataLoaded && !isUserAuthorized(currentUser)) {
-    return <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }} />;
+    return (
+      <NamedRedirect
+        name="NoAccessPage"
+        params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }}
+      />
+    );
   }
   if (
     isDataLoaded &&
     (!hasPermissionToInitiateTransactions(currentUser) ||
       isErrorNoPermissionForInitiateTransactions(initiateOrderError))
   ) {
-    return <NamedRedirect name="NoAccessPage" params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }} />;
+    return (
+      <NamedRedirect
+        name="NoAccessPage"
+        params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }}
+      />
+    );
   }
 
   const foundListingTypeConfig = config.listing.listingTypes.find(
@@ -145,7 +155,10 @@ const EnhancedCheckoutPage = props => {
 
   const listingTitle = listing?.attributes?.title;
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
-  const title = intl.formatMessage({ id: `CheckoutPage.${processName}.title` }, { listingTitle, authorDisplayName });
+  const title = intl.formatMessage(
+    { id: `CheckoutPage.${processName}.title` },
+    { listingTitle, authorDisplayName }
+  );
 
   const paymentMethodChosen = !!pageData?.orderData?.paymentMethod;
 
@@ -155,7 +168,7 @@ const EnhancedCheckoutPage = props => {
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <div className={css.orderFormContainer}>
-            <PaymentMethodButtons pageData={pageData} setPageData={setPageData} listing={listing} />
+            <PaymentMethodButtons pageData={pageData} setPageData={setPageData} />
           </div>
         </div>
       </Page>
@@ -164,7 +177,7 @@ const EnhancedCheckoutPage = props => {
 
   return (
     <CheckoutPageWithPayment
-      key={pageData?.orderData?.paymentMethod || 'no-method'}
+      key={pageData?.orderData?.paymentMethod || 'no-method'} // remount si on change de mode
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
@@ -215,11 +228,10 @@ const mapDispatchToProps = dispatch => ({
 
 const CheckoutPage = compose(connect(mapStateToProps, mapDispatchToProps))(EnhancedCheckoutPage);
 
-CheckoutPage.setInitialValues = (initialValues, saveToSessionStorage = false) => {
-  if (saveToSessionStorage) {
-    const { listing, orderData } = initialValues;
-    storeData(orderData, listing, null, STORAGE_KEY);
-  }
+// ⚠️ Toujours écrire en session pour ne plus perdre les dates
+CheckoutPage.setInitialValues = initialValues => {
+  const { listing, orderData, transaction = null } = initialValues || {};
+  storeData(orderData || {}, listing || null, transaction, STORAGE_KEY);
   return setInitialValues(initialValues);
 };
 
