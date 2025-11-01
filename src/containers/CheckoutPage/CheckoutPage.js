@@ -11,6 +11,7 @@ import {
   NO_ACCESS_PAGE_INITIATE_TRANSACTIONS,
   NO_ACCESS_PAGE_USER_PENDING_APPROVAL,
 } from '../../util/urlHelpers';
+import { createSlug } from '../../util/urlHelpers';
 import {
   hasPermissionToInitiateTransactions,
   isUserAuthorized,
@@ -23,7 +24,7 @@ import { isScrollingDisabled } from '../../ducks/ui.duck';
 import { confirmCardPayment, retrievePaymentIntent } from '../../ducks/stripe.duck';
 import { savePaymentMethod } from '../../ducks/paymentMethods.duck';
 
-import { NamedRedirect, Page } from '../../components';
+import { NamedLink, NamedRedirect, Page } from '../../components';
 
 import { storeData, clearData, handlePageData } from './CheckoutPageSessionHelpers';
 
@@ -63,8 +64,8 @@ const getProcessName = pageData => {
   return resolveLatestProcessName(defaultProcessName);
 };
 
-// UI — 2 boutons au lieu de cases à cocher
-const PaymentMethodButtons = ({ pageData, setPageData }) => {
+// UI — 2 boutons identiques + bouton Retour à l’annonce
+const PaymentMethodButtons = ({ pageData, setPageData, listing, routeConfiguration }) => {
   const setAndStore = method => {
     const updatedPageData = {
       ...pageData,
@@ -77,18 +78,32 @@ const PaymentMethodButtons = ({ pageData, setPageData }) => {
     storeData(updatedPageData.orderData, updatedPageData.listing, updatedPageData.transaction, STORAGE_KEY);
   };
 
+  const listingId = listing?.id?.uuid;
+  const listingSlug = createSlug(listing?.attributes?.title || '');
+
   return (
     <div className={css.paymentMethodSelection}>
+      {/* Bouton retour à l’annonce */}
+      <div style={{ marginBottom: 12 }}>
+        <NamedLink
+          name="ListingPage"
+          params={{ id: listingId, slug: listingSlug }}
+          className="buttonSecondary"
+        >
+          <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
+        </NamedLink>
+      </div>
+
       <h3 className={css.sectionHeading}>
         <FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Choisissez votre mode de paiement" />
       </h3>
 
-      <div className={css.paymentButtonsRow}>
+      <div className={css.paymentButtonsRow} style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button type="button" className="button" onClick={() => setAndStore('card')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.card" defaultMessage="Payer par carte" />
         </button>
 
-        <button type="button" className="button buttonSecondary" onClick={() => setAndStore('cash')}>
+        <button type="button" className="button" onClick={() => setAndStore('cash')}>
           <FormattedMessage id="CheckoutPage.paymentMethod.cash" defaultMessage="Payer en espèces" />
         </button>
       </div>
@@ -173,12 +188,12 @@ const EnhancedCheckoutPage = props => {
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
           <div className={css.orderFormContainer}>
-            <div className={css.headingContainer}>
-              <h1 className={css.heading}>
-                <FormattedMessage id="CheckoutPage.selectPaymentHeading" defaultMessage="Mode de paiement" />
-              </h1>
-            </div>
-            <PaymentMethodButtons pageData={pageData} setPageData={setPageData} />
+            <PaymentMethodButtons
+              pageData={pageData}
+              setPageData={setPageData}
+              listing={listing}
+              routeConfiguration={routeConfiguration}
+            />
           </div>
         </div>
       </Page>
@@ -187,6 +202,7 @@ const EnhancedCheckoutPage = props => {
 
   return (
     <CheckoutPageWithPayment
+      key={pageData?.orderData?.paymentMethod || 'no-method'} // force remount si on change de mode
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
