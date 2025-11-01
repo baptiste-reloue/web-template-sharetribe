@@ -22,6 +22,7 @@ import { confirmCardPayment, retrievePaymentIntent } from '../../ducks/stripe.du
 import { savePaymentMethod } from '../../ducks/paymentMethods.duck';
 
 import { NamedLink, NamedRedirect, Page } from '../../components';
+import { pathByRouteName } from '../../util/routes';
 
 import { storeData, clearData, handlePageData } from './CheckoutPageSessionHelpers';
 
@@ -42,7 +43,6 @@ const STORAGE_KEY = 'CheckoutPage';
 const DEFAULT_PROCESS_KEY = 'default-booking';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
-// -------- helpers URL <-> state ----------
 const getSearchParams = location => new URLSearchParams(location.search || '');
 const setSearchParam = (history, location, key, value) => {
   const sp = getSearchParams(location);
@@ -50,7 +50,6 @@ const setSearchParam = (history, location, key, value) => {
   else sp.set(key, value);
   history.replace({ ...location, search: sp.toString() });
 };
-// -----------------------------------------
 
 // Ne renvoie jamais null/undefined
 const getProcessName = pageData => {
@@ -69,20 +68,32 @@ const getProcessName = pageData => {
 };
 
 // Écran choix paiement (2 boutons + retour en bas)
-const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
+const PaymentMethodButtons = ({ pageData, setPageData, history, location, routeConfiguration }) => {
   const listing = pageData?.listing;
+  const listingId = listing?.id?.uuid;
+  const slug = createSlug(listing?.attributes?.title || '');
 
   const choose = method => {
-    // 1) maj état local + session
+    // persiste orderData (pour garder dates, etc.)
     const updated = {
       ...pageData,
-      orderData: { ...(pageData.orderData || {}), paymentMethod: method }, // 'card' | 'cash'
+      orderData: { ...(pageData.orderData || {}), paymentMethod: method },
     };
     setPageData(updated);
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
-    // 2) maj URL pour éviter tout retour à l'ancien écran (remount, refresh, nav)
-    setSearchParam(history, location, 'method', method);
+    if (method === 'card') {
+      // Checkout par défaut (Stripe)
+      setSearchParam(history, location, 'method', 'card');
+      // on reste sur CheckoutPage: CheckoutPageWithPayment affichera Stripe
+    } else {
+      // Checkout cash : nouvelle page sans Stripe
+      const to = pathByRouteName('CheckoutCashPage', routeConfiguration, {
+        id: listingId,
+        slug,
+      });
+      history.push(to);
+    }
   };
 
   return (
@@ -107,12 +118,11 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
         />
       </p>
 
-      {/* BOUTON RETOUR EN BAS (large) */}
       {listing ? (
         <div className={css.backToListingBottom}>
           <NamedLink
             name="ListingPage"
-            params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
+            params={{ id: listingId, slug }}
             className={css.backButton}
           >
             <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
@@ -133,11 +143,10 @@ const EnhancedCheckoutPage = props => {
   const history = useHistory();
   const location = useLocation();
 
-  // 1) Charger données (Redux/session) au montage
+  // Charger données (Redux/session) au montage + lire ?method
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history) || {};
-    // 2) Lire ?method=... si présent et l’injecter
     const methodFromUrl = getSearchParams(location).get('method');
     const normalized =
       methodFromUrl === 'card' || methodFromUrl === 'cash' ? methodFromUrl : (data.orderData || {}).paymentMethod;
@@ -146,14 +155,14 @@ const EnhancedCheckoutPage = props => {
       ? { ...data, orderData: { ...(data.orderData || {}), paymentMethod: normalized } }
       : data;
 
-    // Persister pour que le remount relise la même info
     if (normalized) {
       storeData(merged.orderData, merged.listing, merged.transaction, STORAGE_KEY);
     }
 
     setPageData(merged);
     setIsDataLoaded(true);
-  }, []); // une seule fois
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
@@ -192,7 +201,8 @@ const EnhancedCheckoutPage = props => {
   const safeProcessKey = processName || DEFAULT_PROCESS_KEY;
   const title = intl.formatMessage({ id: `CheckoutPage.${safeProcessKey}.title` }, { listingTitle, authorDisplayName });
 
-  if (!paymentMethodChosen) {
+  if (!paymentMethodChosen || getSearchParams(location).get('method') == null) {
+    // Écran de CHOIX
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
@@ -203,6 +213,7 @@ const EnhancedCheckoutPage = props => {
               setPageData={setPageData}
               history={history}
               location={location}
+              routeConfiguration={routeConfiguration}
             />
           </div>
         </div>
@@ -210,9 +221,10 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
+  // Si ?method=card, on affiche le checkout par défaut avec Stripe (déjà géré)
   return (
     <CheckoutPageWithPayment
-      key={pageData?.orderData?.paymentMethod || 'no-method'} // remount si on change de mode
+      key={pageData?.orderData?.paymentMethod || 'card'}
       config={config}
       routeConfiguration={routeConfiguration}
       intl={intl}
