@@ -42,30 +42,30 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const DEFAULT_PROCESS_KEY = 'default-booking'; // << fallback sûr
+const DEFAULT_PROCESS_KEY = 'default-booking'; // fallback sûr
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
-// Process résilient: ne renvoie jamais null/undefined
+// Ne renvoie jamais null/undefined
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
 
-  // Si on vient d'une transaction existante
+  // 1) Transaction existante
   const txProc = transaction?.attributes?.processName;
   if (txProc) return resolveLatestProcessName(txProc);
 
-  // Si CASH: forcer le process cash
+  // 2) CASH: forcer le process cash
   if (orderData?.paymentMethod === 'cash') {
     return resolveLatestProcessName('reloue-booking-cash');
   }
 
-  // Sinon tenter l’alias de l’annonce
+  // 3) Alias d’annonce ou fallback
   const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
 
   return resolveLatestProcessName(key);
 };
 
-// UI — 2 boutons identiques + retour à l’annonce
+// Écran choix paiement (2 boutons + retour en bas)
 const PaymentMethodButtons = ({ pageData, setPageData }) => {
   const listing = pageData?.listing;
 
@@ -80,28 +80,23 @@ const PaymentMethodButtons = ({ pageData, setPageData }) => {
 
   return (
     <div className={css.paymentMethodSelection}>
-      {/* Bouton retour à l’annonce */}
-      {listing ? (
-        <div style={{ marginBottom: 12 }}>
-          <NamedLink
-            name="ListingPage"
-            params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
-            className="buttonSecondary"
-          >
-            <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
-          </NamedLink>
-        </div>
-      ) : null}
-
-      <h3 className={css.sectionHeading}>
+      <h3 className={css.paymentMethodTitle}>
         <FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Choisissez votre mode de paiement" />
       </h3>
 
-      <div className={css.paymentButtonsRow} style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" className="button" onClick={() => setAndStore('card')}>
+      <div className={css.paymentButtonsRow}>
+        <button
+          type="button"
+          className={`button ${css.choiceButton}`}
+          onClick={() => setAndStore('card')}
+        >
           <FormattedMessage id="CheckoutPage.paymentMethod.card" defaultMessage="Payer par carte" />
         </button>
-        <button type="button" className="button" onClick={() => setAndStore('cash')}>
+        <button
+          type="button"
+          className={`button ${css.choiceButton}`}
+          onClick={() => setAndStore('cash')}
+        >
           <FormattedMessage id="CheckoutPage.paymentMethod.cash" defaultMessage="Payer en espèces" />
         </button>
       </div>
@@ -112,6 +107,19 @@ const PaymentMethodButtons = ({ pageData, setPageData }) => {
           defaultMessage="Le prix est identique. Si vous choisissez « Espèces », aucune carte ne sera demandée. Les dates seront bloquées après validation du propriétaire."
         />
       </p>
+
+      {/* BOUTON RETOUR EN BAS (large) */}
+      {listing ? (
+        <div className={css.backToListingBottom}>
+          <NamedLink
+            name="ListingPage"
+            params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
+            className={css.backButton}
+          >
+            <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
+          </NamedLink>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -125,17 +133,17 @@ const EnhancedCheckoutPage = props => {
   const intl = useIntl();
   const history = useHistory();
 
-  // Charger les données (Redux/session) au montage
+  // Charger données (Redux/session) au montage
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
-  }, []); // pas de dépendances
+  }, []); // volontairement vide
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
-  const processName = getProcessName(pageData); // jamais null désormais
+  const processName = getProcessName(pageData); // jamais null
   const listing = pageData?.listing;
 
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
@@ -172,7 +180,7 @@ const EnhancedCheckoutPage = props => {
 
   const listingTitle = listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
-  const safeProcessKey = processName || DEFAULT_PROCESS_KEY; // ceinture+bretelles
+  const safeProcessKey = processName || DEFAULT_PROCESS_KEY;
   const title = intl.formatMessage(
     { id: `CheckoutPage.${safeProcessKey}.title` },
     { listingTitle, authorDisplayName }
@@ -213,7 +221,8 @@ const EnhancedCheckoutPage = props => {
   );
 };
 
-// Redux
+// ----------------------- Redux wiring -----------------------
+
 const mapStateToProps = state => {
   const { listing, orderData, transaction, initiateOrderError } = state.CheckoutPage;
   const { currentUser } = state.user;
