@@ -153,7 +153,7 @@ const CheckoutPageWithPayment = props => {
       // On passe le strict minimum : le thunk du template sait quoi récupérer
       onRetrievePaymentIntent({ listingId: listing.id, processName });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+ 
   }, [chosenPaymentMethod, listing?.id, processName]);
 
   // --- Bouton "Changer de mode" placé AVANT le titre ---
