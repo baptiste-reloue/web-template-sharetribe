@@ -9,10 +9,8 @@ import { getProcess, isBookingProcessAlias } from '../../transactions/transactio
 
 import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
 
-import {
-  getFormattedTotalPrice,
-  hasDefaultPaymentMethod,
-} from './CheckoutPageTransactionHelpers.js';
+// On garde uniquement des imports sûrs depuis le helper
+import { getFormattedTotalPrice, hasDefaultPaymentMethod } from './CheckoutPageTransactionHelpers.js';
 
 import CustomTopbar from './CustomTopbar';
 import StripePaymentForm from './StripePaymentForm/StripePaymentForm';
@@ -22,73 +20,35 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-/* ------------------------------------------------------------------
-   Helpers LOCAUX pour supprimer la dépendance aux exports manquants
-   ------------------------------------------------------------------ */
-
-// si on ne gère pas encore une fenêtre d'expiration de paiement,
-// on retourne toujours false
+/* Helpers localisés (pour ne pas dépendre d'exports manquants) */
 const hasPaymentExpiredLocal = () => false;
-
-// idem: tant que la transaction n'est pas encore passée par l'étape "pending-payment",
-// on dit false pour ne pas bloquer l'UI
 const hasTransactionPassedPendingPaymentLocal = () => false;
+const processCheckoutWithPaymentLocal = async () => Promise.resolve(null);
+const getErrorMessagesLocal = () => ({
+  initiateOrderErrorMessage: null,
+  listingNotFoundErrorMessage: null,
+  speculateErrorMessage: null,
+  retrievePaymentIntentErrorMessage: null,
+  paymentExpiredMessage: null,
+  speculateTransactionErrorMessage: null,
+});
 
-// mini orchestrateur Stripe "placeholder" :
-// on laisse la structure attendue par handleCardSubmit,
-// mais on ne fait rien de Stripe ici -> on renvoie null
-const processCheckoutWithPaymentLocal = async () => {
-  return Promise.resolve(null);
-};
-
-// messages d'erreurs à afficher au dessus du formulaire
-// Ici on retourne un objet avec juste des champs vides.
-const getErrorMessagesLocal = (
-  listingNotFound,
-  initiateOrderError,
-  isPaymentExpired,
-  retrievePaymentIntentError,
-  speculateTransactionError,
-  listingLinkEl
-) => {
-  // Tu peux enrichir ces conditions si tu veux afficher du texte personnalisé
-  return {
-    initiateOrderErrorMessage: null,
-    listingNotFoundErrorMessage: null,
-    speculateErrorMessage: null,
-    retrievePaymentIntentErrorMessage: null,
-    paymentExpiredMessage: null,
-    speculateTransactionErrorMessage: null,
-  };
-};
-
-/**
- * Construit les params envoyés à l'API Flex
- * (remplace l'ancien getOrderParams pour qu'on ne dépende pas du helper global)
- */
+/* Construit les params envoyés à Flex (remplace l’ancien getOrderParams) */
 const buildOrderParamsLocal = (pageData, optionalPaymentParams = {}) => {
   const { orderData = {}, listing } = pageData || {};
   const { bookingDates, quantity, deliveryMethod, paymentMethod } = orderData;
 
   const bookingParamsMaybe =
     bookingDates && bookingDates.start && bookingDates.end
-      ? {
-          bookingStart: bookingDates.start,
-          bookingEnd: bookingDates.end,
-        }
+      ? { bookingStart: bookingDates.start, bookingEnd: bookingDates.end }
       : {};
 
-  const quantityMaybe = quantity
-    ? { stockReservationQuantity: quantity }
-    : {};
-
-  const deliveryMaybe = deliveryMethod
-    ? { deliveryMethod }
-    : {};
+  const quantityMaybe = quantity ? { stockReservationQuantity: quantity } : {};
+  const deliveryMaybe = deliveryMethod ? { deliveryMethod } : {};
 
   const protectedData = {
     ...(orderData.protectedData || {}),
-    paymentMethod: paymentMethod || 'card', // 'card' ou 'cash'
+    paymentMethod: paymentMethod || 'card',
   };
 
   return {
@@ -100,10 +60,6 @@ const buildOrderParamsLocal = (pageData, optionalPaymentParams = {}) => {
     ...optionalPaymentParams,
   };
 };
-
-/* ------------------------------------------------------------------
-   COMPONENT
-   ------------------------------------------------------------------ */
 
 const CheckoutPageWithPayment = props => {
   const [submitting, setSubmitting] = useState(false);
@@ -131,7 +87,6 @@ const CheckoutPageWithPayment = props => {
     history,
     routeConfiguration,
 
-    // thunks / callbacks
     onInitiateCashOrder,
     onInitiateOrder,
     onConfirmCardPayment,
@@ -144,7 +99,6 @@ const CheckoutPageWithPayment = props => {
     setPageData,
   } = props;
 
-  // ----- Data extraction -----
   const listing = pageData?.listing;
   const orderData = pageData?.orderData || {};
   const chosenPaymentMethod = orderData?.paymentMethod || 'card';
@@ -152,9 +106,6 @@ const CheckoutPageWithPayment = props => {
   const existingTransaction = ensureTransaction(pageData?.transaction);
   const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
 
-  // tx = la transaction à afficher dans le breakdown :
-  // soit celle qui existe déjà avec ses lineItems complets,
-  // soit la transaction "speculated"
   const tx =
     existingTransaction?.attributes?.lineItems?.length > 0
       ? existingTransaction
@@ -182,102 +133,55 @@ const CheckoutPageWithPayment = props => {
     ) : null;
 
   const totalPrice =
-    tx?.attributes?.lineItems?.length > 0
-      ? getFormattedTotalPrice(tx, intl)
-      : null;
+    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
   const process = processName ? getProcess(processName) : null;
-
-  // ici on utilise la version locale
-  const isPaymentExpired = hasPaymentExpiredLocal(
-    existingTransaction,
-    process,
-    isClockInSync
-  );
+  const isPaymentExpired = hasPaymentExpiredLocal(existingTransaction, process, isClockInSync);
 
   const listingNotFound =
     isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
     isTransactionInitiateListingNotFoundError(initiateOrderError);
 
-  // idem version locale
-  const errorMessages = getErrorMessagesLocal(
-    listingNotFound,
-    initiateOrderError,
-    isPaymentExpired,
-    retrievePaymentIntentError,
-    speculateTransactionError,
-    <NamedLink
-      name="ListingPage"
-      params={{
-        id: listing?.id?.uuid,
-        slug: createSlug(listingTitle),
-      }}
-    >
-      <FormattedMessage id="CheckoutPage.errorlistingLinkText" />
-    </NamedLink>
-  );
+  const errorMessages = getErrorMessagesLocal();
 
   const transactionId = existingTransaction?.id || null;
 
-  // ----- FLOW CASH -----
+  // — Bouton "Changer de mode" : efface le choix et revient au sélecteur —
+  const handleChangeMethod = () => {
+    const updated = {
+      ...pageData,
+      orderData: { ...(pageData.orderData || {}), paymentMethod: null },
+    };
+    setPageData(updated);
+    // on n'efface pas le session storage: revenir en arrière doit conserver les dates
+  };
+
+  // --- CASH ---
   const handleCashSubmit = () => {
     if (submitting) return;
     setSubmitting(true);
-
-    // pas de Stripe dans ce cas
     const orderParams = buildOrderParamsLocal(pageData, {});
-
     onInitiateCashOrder(orderParams, transactionId)
       .then(response => {
         onSubmitCallback();
-
-        // essaie de récupérer l'ID de transaction
         let orderId = null;
-        if (
-          response &&
-          response.data &&
-          response.data.data &&
-          response.data.data.id
-        ) {
-          orderId = response.data.data.id;
-        }
-        if (
-          !orderId &&
-          response &&
-          response.payload &&
-          response.payload.data &&
-          response.payload.data.data &&
-          response.payload.data.data.id
-        ) {
-          orderId = response.payload.data.data.id;
-        }
+        if (response?.data?.data?.id) orderId = response.data.data.id;
+        if (!orderId && response?.payload?.data?.data?.id) orderId = response.payload.data.data.id;
 
         if (orderId) {
-          const orderDetailsPath = pathByRouteName(
-            'OrderDetailsPage',
-            routeConfiguration,
-            { id: orderId }
-          );
-          history.push(orderDetailsPath);
+          history.push(pathByRouteName('OrderDetailsPage', routeConfiguration, { id: orderId }));
         } else {
-          history.push(
-            pathByRouteName(
-              'ListingPage',
-              routeConfiguration,
-              { id: listing?.id?.uuid }
-            )
-          );
+          history.push(pathByRouteName('ListingPage', routeConfiguration, { id: listing?.id?.uuid }));
         }
-
         setSubmitting(false);
       })
-      .catch(err => {
-        console.error('Failed to initiate cash order', err);
+      .catch(e => {
+        console.error('Failed to initiate cash order', e);
         setSubmitting(false);
       });
   };
 
-  // ----- FLOW CB / STRIPE -----
+  // --- CARTE / STRIPE ---
   const handleCardSubmit = values => {
     if (submitting) return;
     setSubmitting(true);
@@ -292,10 +196,7 @@ const CheckoutPageWithPayment = props => {
       stripe: stripeInstance,
     };
 
-    const orderParams = buildOrderParamsLocal(
-      pageData,
-      optionalPaymentParams
-    );
+    const orderParams = buildOrderParamsLocal(pageData, optionalPaymentParams);
 
     processCheckoutWithPaymentLocal({
       orderParams,
@@ -303,14 +204,8 @@ const CheckoutPageWithPayment = props => {
       transactionId,
       stripeCustomerFetched,
       stripeCustomer: currentUser?.stripeCustomer,
-      hasDefaultPaymentMethod: hasDefaultPaymentMethod(
-        stripeCustomerFetched,
-        currentUser
-      ),
-      hasTransactionPassedPendingPayment: hasTransactionPassedPendingPaymentLocal(
-        existingTransaction,
-        process
-      ),
+      hasDefaultPaymentMethod: hasDefaultPaymentMethod(stripeCustomerFetched, currentUser),
+      hasTransactionPassedPendingPayment: hasTransactionPassedPendingPaymentLocal(existingTransaction, process),
       onInitiateOrder,
       onConfirmCardPayment,
       onConfirmPayment,
@@ -321,24 +216,11 @@ const CheckoutPageWithPayment = props => {
     })
       .then(orderId => {
         onSubmitCallback();
-
         if (orderId) {
-          const orderDetailsPath = pathByRouteName(
-            'OrderDetailsPage',
-            routeConfiguration,
-            { id: orderId }
-          );
-          history.push(orderDetailsPath);
+          history.push(pathByRouteName('OrderDetailsPage', routeConfiguration, { id: orderId }));
         } else {
-          history.push(
-            pathByRouteName(
-              'ListingPage',
-              routeConfiguration,
-              { id: listing?.id?.uuid }
-            )
-          );
+          history.push(pathByRouteName('ListingPage', routeConfiguration, { id: listing?.id?.uuid }));
         }
-
         setSubmitting(false);
       })
       .catch(e => {
@@ -347,129 +229,86 @@ const CheckoutPageWithPayment = props => {
       });
   };
 
-  const showPaymentSection =
-    currentUser &&
-    !listingNotFound &&
-    !initiateOrderError &&
-    !speculateTransactionError &&
-    !retrievePaymentIntentError &&
-    !isPaymentExpired;
+  const firstImage = listing?.images && listing.images.length > 0 ? listing.images[0] : null;
 
-  const firstImage =
-    listing?.images && listing.images.length > 0
-      ? listing.images[0]
-      : null;
+  // ⚠️ Simplification volontaire : on affiche Stripe dès que "carte" est choisi.
+  const showStripe = chosenPaymentMethod === 'card' && !listingNotFound;
 
   return (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
-      <CustomTopbar
-        intl={intl}
-        linkToExternalSite={config?.topbar?.logoLink}
-      />
+      <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
 
       <div className={css.contentContainer}>
-        {/* IMAGE / HEADER MOBILE */}
+        {/* Image mobile */}
         <MobileListingImage
           listingTitle={listingTitle}
           author={listing?.author}
           firstImage={firstImage}
-          layoutListingImageConfig={
-            config.layout.listingImage
-          }
+          layoutListingImageConfig={config.layout.listingImage}
           showListingImage={showListingImage}
         />
 
-        {/* COLONNE GAUCHE */}
+        {/* Colonne gauche */}
         <div className={css.orderFormContainer}>
           <div className={css.headingContainer}>
-            <H3 as="h1" className={css.heading}>
-              {title}
-            </H3>
+            <H3 as="h1" className={css.heading}>{title}</H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
-              <FormattedMessage
-                id="CheckoutPage.listingTitle"
-                values={{ listingTitle }}
-              />
+              <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
           </div>
 
+          {/* Bouton retour / changer de mode */}
+          <div style={{ marginBottom: 12 }}>
+            <button type="button" className="buttonSecondary" onClick={handleChangeMethod}>
+              <FormattedMessage id="CheckoutPage.changePayment" defaultMessage="⟵ Changer de mode de paiement" />
+            </button>
+          </div>
+
           <MobileOrderBreakdown
-            speculateTransactionErrorMessage={
-              errorMessages.speculateTransactionErrorMessage
-            }
+            speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
             breakdown={breakdown}
             priceVariantName={priceVariantName}
           />
 
           <section className={css.paymentContainer}>
-            {errorMessages.initiateOrderErrorMessage}
-            {errorMessages.listingNotFoundErrorMessage}
-            {errorMessages.speculateErrorMessage}
-            {errorMessages.retrievePaymentIntentErrorMessage}
-            {errorMessages.paymentExpiredMessage}
-
-            {chosenPaymentMethod === 'card' ? (
-              showPaymentSection ? (
-                <StripePaymentForm
-                  className={css.paymentForm}
-                  onSubmit={handleCardSubmit}
-                  inProgress={submitting}
-                  formId="CheckoutPagePaymentForm"
-                  authorDisplayName={
-                    listing?.author?.attributes?.profile
-                      ?.displayName
-                  }
-                  showInitialMessageInput={true}
-                  initialValues={{}}
-                  initiateOrderError={initiateOrderError}
-                  confirmCardPaymentError={
-                    confirmCardPaymentError
-                  }
-                  confirmPaymentError={confirmPaymentError}
-                  hasHandledCardPayment={false}
-                  loadingData={!stripeCustomerFetched}
-                  defaultPaymentMethod={
-                    hasDefaultPaymentMethod(
-                      stripeCustomerFetched,
-                      currentUser
-                    )
-                      ? currentUser.stripeCustomer
-                          .defaultPaymentMethod
-                      : null
-                  }
-                  paymentIntent={paymentIntent}
-                  onStripeInitialized={stripe => {
-                    setStripeInstance(stripe);
-                    return;
-                  }}
-                  askShippingDetails={
-                    orderData?.deliveryMethod === 'shipping'
-                  }
-                  showPickUplocation={
-                    orderData?.deliveryMethod === 'pickup'
-                  }
-                  listingLocation={
-                    listing?.attributes?.publicData
-                      ?.location
-                  }
-                  totalPrice={totalPrice}
-                  locale={config.localization.locale}
-                  stripePublishableKey={
-                    config.stripe.publishableKey
-                  }
-                  marketplaceName={
-                    config.marketplaceName
-                  }
-                  isBooking={isBookingProcessAlias(
-                    transactionProcessAlias
-                  )}
-                  isFuzzyLocation={
-                    config.maps.fuzzy.enabled
-                  }
-                />
-              ) : null
+            {/* Affichage Stripe si "carte" */}
+            {showStripe ? (
+              <StripePaymentForm
+                className={css.paymentForm}
+                onSubmit={handleCardSubmit}
+                inProgress={submitting}
+                formId="CheckoutPagePaymentForm"
+                authorDisplayName={listing?.author?.attributes?.profile?.displayName}
+                showInitialMessageInput={true}
+                initialValues={{}}
+                initiateOrderError={initiateOrderError}
+                confirmCardPaymentError={confirmCardPaymentError}
+                confirmPaymentError={confirmPaymentError}
+                hasHandledCardPayment={false}
+                loadingData={!stripeCustomerFetched}
+                defaultPaymentMethod={
+                  hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
+                    ? currentUser.stripeCustomer.defaultPaymentMethod
+                    : null
+                }
+                paymentIntent={paymentIntent}
+                onStripeInitialized={stripe => {
+                  setStripeInstance(stripe);
+                  return;
+                }}
+                askShippingDetails={orderData?.deliveryMethod === 'shipping'}
+                showPickUplocation={orderData?.deliveryMethod === 'pickup'}
+                listingLocation={listing?.attributes?.publicData?.location}
+                totalPrice={totalPrice}
+                locale={config.localization.locale}
+                stripePublishableKey={config.stripe.publishableKey}
+                marketplaceName={config.marketplaceName}
+                isBooking={isBookingProcessAlias(transactionProcessAlias)}
+                isFuzzyLocation={config.maps.fuzzy.enabled}
+              />
             ) : (
               <>
+                {/* Mode CASH */}
                 <div className={css.fieldInquiryMessage}>
                   <p>
                     <FormattedMessage
@@ -480,21 +319,11 @@ const CheckoutPageWithPayment = props => {
                 </div>
 
                 <div style={{ marginTop: 16 }}>
-                  <button
-                    className="button"
-                    disabled={submitting}
-                    onClick={handleCashSubmit}
-                  >
+                  <button className="button" disabled={submitting} onClick={handleCashSubmit}>
                     {submitting ? (
-                      <FormattedMessage
-                        id="CheckoutPage.sending"
-                        defaultMessage="Envoi..."
-                      />
+                      <FormattedMessage id="CheckoutPage.sending" defaultMessage="Envoi..." />
                     ) : (
-                      <FormattedMessage
-                        id="CheckoutPage.sendRequest"
-                        defaultMessage="Envoyer la demande"
-                      />
+                      <FormattedMessage id="CheckoutPage.sendRequest" defaultMessage="Envoyer la demande" />
                     )}
                   </button>
                 </div>
@@ -503,19 +332,15 @@ const CheckoutPageWithPayment = props => {
           </section>
         </div>
 
-        {/* COLONNE DROITE */}
+        {/* Colonne droite */}
         <DetailsSideCard
           listing={listing}
           listingTitle={listingTitle}
           priceVariantName={priceVariantName}
           author={listing?.author}
           firstImage={firstImage}
-          layoutListingImageConfig={
-            config.layout.listingImage
-          }
-          speculateTransactionErrorMessage={
-            errorMessages.speculateTransactionErrorMessage
-          }
+          layoutListingImageConfig={config.layout.listingImage}
+          speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
           isInquiryProcess={false}
           processName={processName}
           breakdown={breakdown}
