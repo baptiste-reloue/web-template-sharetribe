@@ -42,39 +42,56 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
+const DEFAULT_PROCESS_KEY = 'default-booking'; // << fallback sûr
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
+// Process résilient: ne renvoie jamais null/undefined
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
-  if (transaction?.id) return resolveLatestProcessName(transaction?.attributes?.processName);
-  const listingAlias = listing?.attributes?.publicData?.transactionProcessAlias || null;
-  const defaultProcessName = listingAlias ? listingAlias.split('/')[0] : null;
-  if (orderData?.paymentMethod === 'cash') return resolveLatestProcessName('reloue-booking-cash');
-  return resolveLatestProcessName(defaultProcessName);
+
+  // Si on vient d'une transaction existante
+  const txProc = transaction?.attributes?.processName;
+  if (txProc) return resolveLatestProcessName(txProc);
+
+  // Si CASH: forcer le process cash
+  if (orderData?.paymentMethod === 'cash') {
+    return resolveLatestProcessName('reloue-booking-cash');
+  }
+
+  // Sinon tenter l’alias de l’annonce
+  const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
+  const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
+
+  return resolveLatestProcessName(key);
 };
 
-// Écran de sélection: deux boutons identiques + retour à l’annonce
+// UI — 2 boutons identiques + retour à l’annonce
 const PaymentMethodButtons = ({ pageData, setPageData }) => {
   const listing = pageData?.listing;
+
   const setAndStore = method => {
     const updated = {
       ...pageData,
-      orderData: { ...(pageData.orderData || {}), paymentMethod: method },
+      orderData: { ...(pageData.orderData || {}), paymentMethod: method }, // 'card' | 'cash'
     };
     setPageData(updated);
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
   };
+
   return (
     <div className={css.paymentMethodSelection}>
-      <div style={{ marginBottom: 12 }}>
-        <NamedLink
-          name="ListingPage"
-          params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
-          className="buttonSecondary"
-        >
-          <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
-        </NamedLink>
-      </div>
+      {/* Bouton retour à l’annonce */}
+      {listing ? (
+        <div style={{ marginBottom: 12 }}>
+          <NamedLink
+            name="ListingPage"
+            params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
+            className="buttonSecondary"
+          >
+            <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
+          </NamedLink>
+        </div>
+      ) : null}
 
       <h3 className={css.sectionHeading}>
         <FormattedMessage id="CheckoutPage.paymentMethod.title" defaultMessage="Choisissez votre mode de paiement" />
@@ -108,22 +125,22 @@ const EnhancedCheckoutPage = props => {
   const intl = useIntl();
   const history = useHistory();
 
-  // Lire les données (sessionStorage/Redux) au montage
+  // Charger les données (Redux/session) au montage
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history);
     setPageData(data || {});
     setIsDataLoaded(true);
-  }, []); // eslint ok
+  }, []); // pas de dépendances
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
 
-  const processName = getProcessName(pageData);
+  const processName = getProcessName(pageData); // jamais null désormais
   const listing = pageData?.listing;
 
   const isOwnListing = currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
 
-  // Redirections strictement nécessaires
+  // Redirections minimales
   if (isDataLoaded && isOwnListing) {
     return <NamedRedirect name="ListingPage" params={params} />;
   }
@@ -153,10 +170,11 @@ const EnhancedCheckoutPage = props => {
   );
   const showListingImage = requireListingImage(foundListingTypeConfig);
 
-  const listingTitle = listing?.attributes?.title;
+  const listingTitle = listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
+  const safeProcessKey = processName || DEFAULT_PROCESS_KEY; // ceinture+bretelles
   const title = intl.formatMessage(
-    { id: `CheckoutPage.${processName}.title` },
+    { id: `CheckoutPage.${safeProcessKey}.title` },
     { listingTitle, authorDisplayName }
   );
 
@@ -182,7 +200,7 @@ const EnhancedCheckoutPage = props => {
       routeConfiguration={routeConfiguration}
       intl={intl}
       history={history}
-      processName={processName}
+      processName={safeProcessKey}
       sessionStorageKey={STORAGE_KEY}
       pageData={pageData}
       setPageData={setPageData}
@@ -228,7 +246,7 @@ const mapDispatchToProps = dispatch => ({
 
 const CheckoutPage = compose(connect(mapStateToProps, mapDispatchToProps))(EnhancedCheckoutPage);
 
-// ⚠️ Toujours écrire en session pour ne plus perdre les dates
+// Toujours écrire en session pour ne plus perdre les dates
 CheckoutPage.setInitialValues = initialValues => {
   const { listing, orderData, transaction = null } = initialValues || {};
   storeData(orderData || {}, listing || null, transaction, STORAGE_KEY);
