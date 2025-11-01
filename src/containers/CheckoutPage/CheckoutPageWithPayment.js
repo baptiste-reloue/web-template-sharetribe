@@ -5,7 +5,8 @@ import { propTypes } from '../../util/types';
 import { ensureTransaction } from '../../util/data';
 import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
 import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
-import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
+
+import { H3, H4, OrderBreakdown, Page } from '../../components';
 
 import { getFormattedTotalPrice, hasDefaultPaymentMethod } from './CheckoutPageTransactionHelpers.js';
 
@@ -17,7 +18,7 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// Helpers ultra-simples (local)
+// Helpers locaux ultra-simples
 const hasPaymentExpiredLocal = () => false;
 const hasTransactionPassedPendingPaymentLocal = () => false;
 const processCheckoutWithPaymentLocal = async () => Promise.resolve(null);
@@ -118,7 +119,7 @@ const CheckoutPageWithPayment = props => {
   const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
   const transactionId = existingTx?.id || null;
 
-  // Forcer un PaymentIntent dès que "carte" est choisi
+  // Récupérer/rafraîchir un PaymentIntent dès que "carte" est choisi
   useEffect(() => {
     if (chosenPaymentMethod === 'card' && listing?.id) {
       onRetrievePaymentIntent({ listingId: listing.id, processName });
@@ -348,13 +349,13 @@ CheckoutPageWithPayment.propTypes = {
   routeConfiguration: propTypes.array.isRequired,
   onInitiateCashOrder: propTypes.func.isRequired,
   onInitiateOrder: propTypes.func.isRequired,
-  onConfirmCardPayment: propTypes.func.isRequired,
-  onConfirmPayment: propTypes.func.isRequired,
-  onSendMessage: propTypes.func.isRequired,
-  onSavePaymentMethod: propTypes.func.isRequired,
-  onRetrievePaymentIntent: propTypes.func.isRequired,
-  onSubmitCallback: propTypes.func.isRequired,
-  setPageData: propTypes.func.isRequired,
+  onConfirmCardPayment: propTypes.func isRequired,
+  onConfirmPayment: propTypes.func isRequired,
+  onSendMessage: propTypes.func isRequired,
+  onSavePaymentMethod: propTypes.func isRequired,
+  onRetrievePaymentIntent: propTypes.func isRequired,
+  onSubmitCallback: propTypes.func isRequired,
+  setPageData: propTypes.func isRequired,
 };
 
 export default CheckoutPageWithPayment;
