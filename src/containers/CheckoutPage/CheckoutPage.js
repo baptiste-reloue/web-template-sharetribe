@@ -161,7 +161,6 @@ const EnhancedCheckoutPage = props => {
 
     setPageData(merged);
     setIsDataLoaded(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { currentUser, params, scrollingDisabled, initiateOrderError } = props;
