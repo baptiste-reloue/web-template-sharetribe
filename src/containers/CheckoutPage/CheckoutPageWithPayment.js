@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FormattedMessage } from '../../util/reactIntl';
 import { pathByRouteName } from '../../util/routes';
 import { propTypes } from '../../util/types';
@@ -7,7 +7,6 @@ import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
 import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
 import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
 
-// Imports sûrs depuis ton helper
 import { getFormattedTotalPrice, hasDefaultPaymentMethod } from './CheckoutPageTransactionHelpers.js';
 
 import CustomTopbar from './CustomTopbar';
@@ -18,18 +17,18 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// Helpers "localisés" ultra-simples (pas de dépendances)
+// Helpers ultra-simples (local)
 const hasPaymentExpiredLocal = () => false;
 const hasTransactionPassedPendingPaymentLocal = () => false;
 const processCheckoutWithPaymentLocal = async () => Promise.resolve(null);
-const errorMsgs = {
+const getErrorMessagesLocal = () => ({
   initiateOrderErrorMessage: null,
   listingNotFoundErrorMessage: null,
   speculateErrorMessage: null,
   retrievePaymentIntentErrorMessage: null,
   paymentExpiredMessage: null,
   speculateTransactionErrorMessage: null,
-};
+});
 
 const buildOrderParamsLocal = (pageData, extra = {}) => {
   const { orderData = {}, listing } = pageData || {};
@@ -82,7 +81,7 @@ const CheckoutPageWithPayment = props => {
     onConfirmPayment,
     onSendMessage,
     onSavePaymentMethod,
-    onRetrievePaymentIntent, // dispo via props (CheckoutPage.js)
+    onRetrievePaymentIntent,
 
     onSubmitCallback,
     setPageData,
@@ -119,7 +118,14 @@ const CheckoutPageWithPayment = props => {
   const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
   const transactionId = existingTx?.id || null;
 
-  // Bouton "changer de mode" AVANT le titre
+  // Forcer un PaymentIntent dès que "carte" est choisi
+  useEffect(() => {
+    if (chosenPaymentMethod === 'card' && listing?.id) {
+      onRetrievePaymentIntent({ listingId: listing.id, processName });
+    }
+  }, [chosenPaymentMethod, listing?.id, processName]);
+
+  // Bouton "Changer de mode" (au-dessus du titre)
   const handleChangeMethod = () => {
     const updated = { ...pageData, orderData: { ...(orderData || {}), paymentMethod: null } };
     setPageData(updated);
@@ -133,10 +139,7 @@ const CheckoutPageWithPayment = props => {
     onInitiateCashOrder(orderParams, transactionId)
       .then(res => {
         onSubmitCallback();
-        const id =
-          res?.data?.data?.id ||
-          res?.payload?.data?.data?.id ||
-          null;
+        const id = res?.data?.data?.id || res?.payload?.data?.data?.id || null;
         history.push(
           id
             ? pathByRouteName('OrderDetailsPage', routeConfiguration, { id })
@@ -154,7 +157,6 @@ const CheckoutPageWithPayment = props => {
   const handleCardSubmit = values => {
     if (submitting) return;
     setSubmitting(true);
-
     const extra = {
       message: values?.message,
       setupPaymentMethod: values?.setupPaymentMethod,
@@ -206,14 +208,13 @@ const CheckoutPageWithPayment = props => {
 
       <div className={css.contentContainer}>
         <div className={css.orderFormContainer}>
-          {/* Changer de mode (retour) */}
+          {/* Changer de mode — AVANT le titre */}
           <div style={{ marginBottom: 12 }}>
             <button type="button" className="buttonSecondary" onClick={handleChangeMethod}>
               <FormattedMessage id="CheckoutPage.changePayment" defaultMessage="⟵ Changer de mode de paiement" />
             </button>
           </div>
 
-          {/* Image mobile + titres */}
           <MobileListingImage
             listingTitle={listingTitle}
             author={listing?.author}
@@ -230,7 +231,7 @@ const CheckoutPageWithPayment = props => {
           </div>
 
           <MobileOrderBreakdown
-            speculateTransactionErrorMessage={errorMsgs.speculateTransactionErrorMessage}
+            speculateTransactionErrorMessage={getErrorMessagesLocal().speculateTransactionErrorMessage}
             breakdown={breakdown}
             priceVariantName={tx?.attributes?.protectedData?.priceVariantName}
           />
@@ -250,7 +251,7 @@ const CheckoutPageWithPayment = props => {
                 confirmCardPaymentError={confirmCardPaymentError}
                 confirmPaymentError={confirmPaymentError}
                 hasHandledCardPayment={false}
-                loadingData={false}  // on n'empêche pas l'affichage
+                loadingData={false}
                 defaultPaymentMethod={
                   hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
                     ? currentUser.stripeCustomer.defaultPaymentMethod
@@ -265,7 +266,9 @@ const CheckoutPageWithPayment = props => {
                 locale={config.localization.locale}
                 stripePublishableKey={config.stripe.publishableKey}
                 marketplaceName={config.marketplaceName}
-                isBooking={isBookingProcessAlias(listing?.attributes?.publicData?.transactionProcessAlias)}
+                isBooking={isBookingProcessAlias(
+                  listing?.attributes?.publicData?.transactionProcessAlias
+                )}
                 isFuzzyLocation={config.maps.fuzzy.enabled}
               />
             ) : (
@@ -299,7 +302,7 @@ const CheckoutPageWithPayment = props => {
           author={listing?.author}
           firstImage={firstImage}
           layoutListingImageConfig={config.layout.listingImage}
-          speculateTransactionErrorMessage={errorMsgs.speculateTransactionErrorMessage}
+          speculateTransactionErrorMessage={getErrorMessagesLocal().speculateTransactionErrorMessage}
           isInquiryProcess={false}
           processName={processName}
           breakdown={breakdown}
