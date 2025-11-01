@@ -349,13 +349,13 @@ CheckoutPageWithPayment.propTypes = {
   routeConfiguration: propTypes.array.isRequired,
   onInitiateCashOrder: propTypes.func.isRequired,
   onInitiateOrder: propTypes.func.isRequired,
-  onConfirmCardPayment: propTypes.func isRequired,
-  onConfirmPayment: propTypes.func isRequired,
-  onSendMessage: propTypes.func isRequired,
-  onSavePaymentMethod: propTypes.func isRequired,
-  onRetrievePaymentIntent: propTypes.func isRequired,
-  onSubmitCallback: propTypes.func isRequired,
-  setPageData: propTypes.func isRequired,
+  onConfirmCardPayment: propTypes.func.isRequired,
+  onConfirmPayment: propTypes.func.isRequired,
+  onSendMessage: propTypes.func.isRequired,
+  onSavePaymentMethod: propTypes.func.isRequired,
+  onRetrievePaymentIntent: propTypes.func.isRequired,
+  onSubmitCallback: propTypes.func.isRequired,
+  setPageData: propTypes.func.isRequired,
 };
 
 export default CheckoutPageWithPayment;
