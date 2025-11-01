@@ -481,3 +481,37 @@
   line-height: 1.4;
   color: var(--colorGrey700);
 }
+
+/* ==== Checkout: choix du mode de paiement (ajouts) ==== */
+
+.paymentMethodTitle {
+  font-size: 1.6rem;         /* + grand */
+  font-weight: 700;          /* gras */
+  line-height: 1.25;
+  margin: 0 0 12px 0;
+  text-align: left;
+}
+
+.paymentButtonsRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;   /* centre si tu veux: center */
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 8px;
+}
+
+.choiceButton {
+  /* complète la classe .button existante */
+  padding: 12px 18px;        /* + gros */
+  font-size: 1rem;
+  font-weight: 600;
+  border-width: 2px;         /* plus “costaud” */
+  border-radius: 8px;
+  min-width: 200px;          /* mêmes tailles visuelles */
+}
+
+.backToListing {
+  margin-bottom: 12px;
+  display: inline-block;
+}
