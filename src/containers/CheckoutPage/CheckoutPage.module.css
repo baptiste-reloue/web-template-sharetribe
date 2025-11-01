@@ -515,3 +515,35 @@
   margin-bottom: 12px;
   display: inline-block;
 }
+
+/* ==== Bouton retour (CTA bas de page) ==== */
+
+.backToListingBottom {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.backButton {
+  background-color: white;
+  color: #333;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-weight: 600;
+  width: 100%;
+  max-width: 300px;
+  transition: all 0.2s ease;
+}
+
+.backButton:hover {
+  background-color: #ffd55b; /* jaune Reloue */
+  border-color: #ffd55b;
+  color: #000;
+}
+
+.backButton:active {
+  background-color: #ffcc33; /* clic plus foncé */
+  border-color: #ffcc33;
+  transform: scale(0.98);
+}
