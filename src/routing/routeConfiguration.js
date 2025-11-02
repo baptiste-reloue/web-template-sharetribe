@@ -14,6 +14,7 @@ const pageDataLoadingAPI = getPageDataLoadingAPI();
 
 const AuthenticationPage = loadable(() => import(/* webpackChunkName: "AuthenticationPage" */ '../containers/AuthenticationPage/AuthenticationPage'));
 const CheckoutPage = loadable(() => import(/* webpackChunkName: "CheckoutPage" */ '../containers/CheckoutPage/CheckoutPage'));
+const CheckoutCashPage = loadable(() => import(/* webpackChunkName: "CheckoutCashPage" */ '../containers/CheckoutPage/CheckoutCashPage/CheckouCastPage'));
 const CMSPage = loadable(() => import(/* webpackChunkName: "CMSPage" */ '../containers/CMSPage/CMSPage'));
 const ContactDetailsPage = loadable(() => import(/* webpackChunkName: "ContactDetailsPage" */ '../containers/ContactDetailsPage/ContactDetailsPage'));
 const EditListingPage = loadable(() => import(/* webpackChunkName: "EditListingPage" */ '../containers/EditListingPage/EditListingPage'));
@@ -121,6 +122,11 @@ const routeConfiguration = (layoutConfig, accessControlConfig) => {
       component: CheckoutPage,
       setInitialValues: pageDataLoadingAPI.CheckoutPage.setInitialValues,
     },
+    {
+      path: '/l/:slug/:id/checkout-cash',
+      name: 'CheckoutCashPage',
+      component: CheckoutCashPage,
+    }
     {
       path: '/l/:slug/:id/:variant',
       name: 'ListingPageVariant',
