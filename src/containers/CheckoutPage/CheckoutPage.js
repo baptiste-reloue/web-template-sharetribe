@@ -1,3 +1,5 @@
+// src/containers/CheckoutPage/CheckoutPage.js
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useState } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
@@ -41,37 +43,38 @@ const STORAGE_KEY = 'CheckoutPage';
 const DEFAULT_PROCESS_KEY = 'default-booking';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
-// -------- helpers URL <-> state ----------
-const getSearchParams = location => new URLSearchParams(location.search || '');
-// -----------------------------------------
+// --------------------------------- URL helpers ---------------------------------
+const getSearchParams = location => new URLSearchParams(location?.search || '');
+// -------------------------------------------------------------------------------
 
-// Ne renvoie jamais null/undefined
+// Process name fiable (tx existante > choix cash > alias > défaut)
 const getProcessName = pageData => {
   const { transaction, listing, orderData } = pageData || {};
-
-  // 1) Process d’une transaction existante
   const txProc = transaction?.attributes?.processName;
   if (txProc) return resolveLatestProcessName(txProc);
 
-  // 2) Forcer le process cash si choisi
   if (orderData?.paymentMethod === 'cash') {
     return resolveLatestProcessName('reloue-booking-cash');
   }
 
-  // 3) Sinon, process par défaut (ou alias d’annonce s’il existe)
   const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
   return resolveLatestProcessName(key);
 };
 
-// ------------------- Vue: Choix du mode de paiement -------------------
-const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
+// ------------------- Bloc CHOIX du mode de paiement -------------------
+const PaymentMethodButtons = ({ pageData, setPageData, history, location, routeParams }) => {
   const listing = pageData?.listing;
-  const listingId = listing?.id?.uuid;
-  const slug = createSlug(listing?.attributes?.title || '');
+
+  // sources prioritaires : listing hydraté → sinon params route
+  const listingId = listing?.id?.uuid || routeParams?.id || '';
+  const slug =
+    createSlug(listing?.attributes?.title || '') ||
+    routeParams?.slug ||
+    'annonce';
 
   const choose = method => {
-    // Persiste le choix + orderData (dates, qty, etc.)
+    // 1) persiste le choix + orderData pour garder dates/qty/etc.
     const updated = {
       ...pageData,
       orderData: { ...(pageData.orderData || {}), paymentMethod: method },
@@ -80,12 +83,17 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
     if (method === 'card') {
-      // Checkout CARTE : rester sur /l/:slug/:id/checkout et ajouter ?method=card
-      history.replace(`/l/${slug}/${listingId}/checkout?method=card`);
+      // 2a) CARTE : on reste sur la même route checkout en ajoutant ?method=card
+      const nextUrl = listingId && slug
+        ? `/l/${slug}/${listingId}/checkout?method=card`
+        : `${location.pathname}?method=card`;
+      history.replace(nextUrl);
       if (typeof window !== 'undefined') window.scrollTo(0, 0);
     } else {
-      // Checkout ESPÈCES : naviguer vers la page cash
-      history.push(`/l/${slug}/${listingId}/checkout-cash`);
+      // 2b) ESPÈCES : route dédiée cash
+      if (listingId && slug) {
+        history.push(`/l/${slug}/${listingId}/checkout-cash`);
+      }
     }
   };
 
@@ -115,7 +123,7 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
         <div className={css.backToListingBottom}>
           <NamedLink
             name="ListingPage"
-            params={{ id: listingId, slug }}
+            params={{ id: listing?.id?.uuid, slug: createSlug(listing?.attributes?.title || '') }}
             className={css.backButton}
           >
             <FormattedMessage id="CheckoutPage.backToListing" defaultMessage="⟵ Retour à l’annonce" />
@@ -126,7 +134,7 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location }) => {
   );
 };
 
-// ----------------------------- Page -----------------------------------
+// --------------------------------- Page ---------------------------------
 const EnhancedCheckoutPage = props => {
   const [pageData, setPageData] = useState({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -137,15 +145,16 @@ const EnhancedCheckoutPage = props => {
   const history = useHistory();
   const location = useLocation();
 
-  // Charger données (Redux or session) + lire ?method
+  // Charger données (Redux/session) au montage + normaliser le choix
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history) || {};
 
-    // Pré-lecture éventuelle du choix dans l’URL
     const methodFromUrl = getSearchParams(location).get('method');
     const normalized =
-      methodFromUrl === 'card' || methodFromUrl === 'cash' ? methodFromUrl : (data.orderData || {}).paymentMethod;
+      methodFromUrl === 'card' || methodFromUrl === 'cash'
+        ? methodFromUrl
+        : (data.orderData || {}).paymentMethod;
 
     const merged = normalized
       ? { ...data, orderData: { ...(data.orderData || {}), paymentMethod: normalized } }
@@ -161,7 +170,7 @@ const EnhancedCheckoutPage = props => {
 
   const {
     currentUser,
-    params,
+    params, // { slug, id } depuis la route
     scrollingDisabled,
     initiateOrderError,
   } = props;
@@ -169,10 +178,10 @@ const EnhancedCheckoutPage = props => {
   const processName = getProcessName(pageData); // jamais null
   const listing = pageData?.listing;
 
+  // Garde-fous d’accès
   const isOwnListing =
     currentUser?.id && listing?.author?.id?.uuid && listing.author.id.uuid === currentUser.id.uuid;
 
-  // Garde-fous d’accès
   if (isDataLoaded && isOwnListing) {
     return <NamedRedirect name="ListingPage" params={params} />;
   }
@@ -197,10 +206,11 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
-  // Rendu
+  // Contexte d'affichage
   const listingTitle = listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
   const safeProcessKey = processName || DEFAULT_PROCESS_KEY;
+
   const title = intl.formatMessage(
     { id: `CheckoutPage.${safeProcessKey}.title` },
     { listingTitle, authorDisplayName }
@@ -211,10 +221,13 @@ const EnhancedCheckoutPage = props => {
   );
   const showListingImage = requireListingImage(foundListingTypeConfig);
 
+  // Décision d'afficher Stripe :
   const methodFromUrl = getSearchParams(location).get('method');
+  const showStripe =
+    methodFromUrl === 'card' || pageData?.orderData?.paymentMethod === 'card';
 
-  // Si PAS de ?method=..., on affiche l’écran de CHOIX
-  if (!methodFromUrl) {
+  // Si PAS Stripe → écran de CHOIX
+  if (!showStripe) {
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
@@ -225,6 +238,7 @@ const EnhancedCheckoutPage = props => {
               setPageData={setPageData}
               history={history}
               location={location}
+              routeParams={params}
             />
           </div>
         </div>
@@ -232,12 +246,12 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
-  // Si ?method=card => afficher directement le checkout Stripe
+  // Sinon : Stripe direct (checkout CARTE)
   return (
     <CheckoutPageWithPayment
       key={pageData?.orderData?.paymentMethod || 'card'}
       config={config}
-      routeConfiguration={routeConfiguration}
+      routeConfiguration={useRouteConfiguration()}
       intl={intl}
       history={history}
       processName={safeProcessKey}
