@@ -10,8 +10,8 @@ import { fetchCurrentUserHasOrdersSuccess, fetchCurrentUser } from '../../ducks/
  * RELOUE: configuration des process & transitions
  * ---------------------------------------------------------------------------
  */
-export const CARD_PROCESS_ALIAS = 'default-booking/release-1';
-export const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+export const CARD_PROCESS_ALIAS = 'default-booking';
+export const CASH_PROCESS_ALIAS = 'reloue-booking-cash';
 
 // Transition d’entrée classique du process booking Sharetribe
 export const TX_REQUEST = 'transition/request';
