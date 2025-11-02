@@ -5,6 +5,21 @@ import { storableError } from '../../util/errors';
 import * as log from '../../util/log';
 import { fetchCurrentUserHasOrdersSuccess, fetchCurrentUser } from '../../ducks/user.duck';
 
+/**
+ * ---------------------------------------------------------------------------
+ * RELOUE: configuration des process & transitions
+ * ---------------------------------------------------------------------------
+ */
+export const CARD_PROCESS_ALIAS = 'default-booking/release-1';
+export const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+
+// Transition d’entrée classique du process booking Sharetribe
+export const TX_REQUEST = 'transition/request';
+
+// (la suite est passée depuis l’UI, on ne fige rien ici)
+export const getAliasForMethod = method =>
+  method === 'cash' ? CASH_PROCESS_ALIAS : CARD_PROCESS_ALIAS;
+
 // ================ Action types ================ //
 
 export const SET_INITIAL_VALUES = 'app/CheckoutPage/SET_INITIAL_VALUES';
@@ -60,7 +75,6 @@ export default function checkoutPageReducer(state = initialState, action = {}) {
         speculatedTransaction: null,
       };
     case SPECULATE_TRANSACTION_SUCCESS: {
-      // Check that the local devices clock is within a minute from the server
       const lastTransitionedAt = payload.transaction?.attributes?.lastTransitionedAt;
       const localTime = new Date();
       const minute = 60000;
@@ -114,8 +128,6 @@ export default function checkoutPageReducer(state = initialState, action = {}) {
       return state;
   }
 }
-
-// ================ Selectors ================ //
 
 // ================ Action creators ================ //
 
@@ -179,8 +191,13 @@ export const initiateInquiryError = e => ({
   payload: e,
 });
 
-/* ================ Thunks ================ */
+// ================ Thunks ================ //
 
+/**
+ * Thunk générique : initier/transitionner une transaction (carte ou espèces)
+ * - processAlias : 'default-booking/release-1' (carte) ou 'reloue-booking-cash/release-1' (espèces)
+ * - transitionName : généralement 'transition/request' pour l’initiation
+ */
 export const initiateOrder = (
   orderParams,
   processAlias,
@@ -190,18 +207,16 @@ export const initiateOrder = (
 ) => (dispatch, getState, sdk) => {
   dispatch(initiateOrderRequest());
 
-  // If we already have a transaction ID, we should transition, not
-  // initiate.
   const isTransition = !!transactionId;
 
   const { deliveryMethod, quantity, bookingDates, ...otherOrderParams } = orderParams;
   const quantityMaybe = quantity ? { stockReservationQuantity: quantity } : {};
   const bookingParamsMaybe = bookingDates || {};
 
-  // Parameters only for client app's server
+  // Params côté server (si vous avez des webhooks/logic spécifiques)
   const orderData = deliveryMethod ? { deliveryMethod } : {};
 
-  // Parameters for Marketplace API
+  // Params pour Marketplace API
   const transitionParams = {
     ...quantityMaybe,
     ...bookingParamsMaybe,
@@ -219,10 +234,8 @@ export const initiateOrder = (
         transition: transitionName,
         params: transitionParams,
       };
-  const queryParams = {
-    include: ['booking', 'provider'],
-    expand: true,
-  };
+
+  const queryParams = { include: ['booking', 'provider'], expand: true };
 
   const handleSuccess = response => {
     const entities = denormalisedResponseEntities(response);
@@ -237,7 +250,7 @@ export const initiateOrder = (
     const transactionIdMaybe = transactionId ? { transactionId: transactionId.uuid } : {};
     log.error(e, 'initiate-order-failed', {
       ...transactionIdMaybe,
-      listingId: orderParams.listingId.uuid,
+      listingId: orderParams.listingId?.uuid,
       ...quantityMaybe,
       ...bookingParamsMaybe,
       ...orderData,
@@ -247,30 +260,32 @@ export const initiateOrder = (
   };
 
   if (isTransition && isPrivilegedTransition) {
-    // transition privileged
     return transitionPrivileged({ isSpeculative: false, orderData, bodyParams, queryParams })
       .then(handleSuccess)
       .catch(handleError);
   } else if (isTransition) {
-    // transition non-privileged
-    return sdk.transactions
-      .transition(bodyParams, queryParams)
-      .then(handleSuccess)
-      .catch(handleError);
+    return sdk.transactions.transition(bodyParams, queryParams).then(handleSuccess).catch(handleError);
   } else if (isPrivilegedTransition) {
-    // initiate privileged
     return initiatePrivileged({ isSpeculative: false, orderData, bodyParams, queryParams })
       .then(handleSuccess)
       .catch(handleError);
   } else {
-    // initiate non-privileged
-    return sdk.transactions
-      .initiate(bodyParams, queryParams)
-      .then(handleSuccess)
-      .catch(handleError);
+    return sdk.transactions.initiate(bodyParams, queryParams).then(handleSuccess).catch(handleError);
   }
 };
 
+/**
+ * RELOUE : wrapper pratique pour le CASH
+ * - Alias forcé: reloue-booking-cash/release-1
+ * - Transition d’entrée: transition/request
+ */
+export const initiateCashOrder = (orderParams, transactionId = null, transitionName = TX_REQUEST, isPrivileged = false) =>
+  initiateOrder(orderParams, CASH_PROCESS_ALIAS, transactionId, transitionName, isPrivileged);
+
+/**
+ * Transition “confirm payment” (utilisée par Stripe flow)
+ * (le nom de transition est passé depuis l’UI selon le process)
+ */
 export const confirmPayment = (transactionId, transitionName, transitionParams = {}) => (
   dispatch,
   getState,
@@ -278,15 +293,8 @@ export const confirmPayment = (transactionId, transitionName, transitionParams =
 ) => {
   dispatch(confirmPaymentRequest());
 
-  const bodyParams = {
-    id: transactionId,
-    transition: transitionName,
-    params: transitionParams,
-  };
-  const queryParams = {
-    include: ['booking', 'provider'],
-    expand: true,
-  };
+  const bodyParams = { id: transactionId, transition: transitionName, params: transitionParams };
+  const queryParams = { include: ['booking', 'provider'], expand: true };
 
   return sdk.transactions
     .transition(bodyParams, queryParams)
@@ -298,9 +306,7 @@ export const confirmPayment = (transactionId, transitionName, transitionParams =
     .catch(e => {
       dispatch(confirmPaymentError(storableError(e)));
       const transactionIdMaybe = transactionId ? { transactionId: transactionId.uuid } : {};
-      log.error(e, 'initiate-order-failed', {
-        ...transactionIdMaybe,
-      });
+      log.error(e, 'initiate-order-failed', { ...transactionIdMaybe });
       throw e;
     });
 };
@@ -312,9 +318,7 @@ export const sendMessage = params => (dispatch, getState, sdk) => {
   if (message) {
     return sdk.messages
       .send({ transactionId: orderId, content: message })
-      .then(() => {
-        return { orderId, messageSuccess: true };
-      })
+      .then(() => ({ orderId, messageSuccess: true }))
       .catch(e => {
         log.error(e, 'initial-message-send-failed', { txId: orderId });
         return { orderId, messageSuccess: false };
@@ -325,14 +329,9 @@ export const sendMessage = params => (dispatch, getState, sdk) => {
 };
 
 /**
- * Initiate transaction against default-inquiry process
- * Note: At this point inquiry transition is made directly against Marketplace API.
- *       So, client app's server is not involved here unlike with transitions including payments.
- *
- * @param {*} inquiryParams contains listingId and protectedData
- * @param {*} processAlias 'default-inquiry/release-1'
- * @param {*} transitionName 'transition/inquire-without-payment'
- * @returns
+ * (Conservé pour compat éventuelle)
+ * Initiate transaction contre un process d’inquiry sans paiement.
+ * Pas utilisé dans le flux RELOUE “cash” (on passe par reloue-booking-cash).
  */
 export const initiateInquiryWithoutPayment = (inquiryParams, processAlias, transitionName) => (
   dispatch,
@@ -342,23 +341,14 @@ export const initiateInquiryWithoutPayment = (inquiryParams, processAlias, trans
   dispatch(initiateInquiryRequest());
 
   if (!processAlias) {
-    const error = new Error('No transaction process attached to listing');
-    log.error(error, 'listing-process-missing', {
-      listingId: listing?.id?.uuid,
-    });
+    const error = new Error('No transaction process alias given');
+    log.error(error, 'listing-process-missing', {});
     dispatch(initiateInquiryError(storableError(error)));
     return Promise.reject(error);
   }
 
-  const bodyParams = {
-    transition: transitionName,
-    processAlias,
-    params: inquiryParams,
-  };
-  const queryParams = {
-    include: ['provider'],
-    expand: true,
-  };
+  const bodyParams = { transition: transitionName, processAlias, params: inquiryParams };
+  const queryParams = { include: ['provider'], expand: true };
 
   return sdk.transactions
     .initiate(bodyParams, queryParams)
@@ -374,17 +364,7 @@ export const initiateInquiryWithoutPayment = (inquiryParams, processAlias, trans
 };
 
 /**
- * Initiate or transition the speculative transaction with the given
- * booking details
- *
- * The API allows us to do speculative transaction initiation and
- * transitions. This way we can create a test transaction and get the
- * actual pricing information as if the transaction had been started,
- * without affecting the actual data.
- *
- * We store this speculative transaction in the page store and use the
- * pricing info for the booking breakdown to get a proper estimate for
- * the price with the chosen information.
+ * Spéculation (pour afficher un pricing estimé avant l’initiation réelle)
  */
 export const speculateTransaction = (
   orderParams,
@@ -395,27 +375,17 @@ export const speculateTransaction = (
 ) => (dispatch, getState, sdk) => {
   dispatch(speculateTransactionRequest());
 
-  // If we already have a transaction ID, we should transition, not
-  // initiate.
   const isTransition = !!transactionId;
 
-  const {
-    deliveryMethod,
-    priceVariantName,
-    quantity,
-    bookingDates,
-    ...otherOrderParams
-  } = orderParams;
+  const { deliveryMethod, priceVariantName, quantity, bookingDates, ...otherOrderParams } = orderParams;
   const quantityMaybe = quantity ? { stockReservationQuantity: quantity } : {};
   const bookingParamsMaybe = bookingDates || {};
 
-  // Parameters only for client app's server
   const orderData = {
     ...(deliveryMethod ? { deliveryMethod } : {}),
     ...(priceVariantName ? { priceVariantName } : {}),
   };
 
-  // Parameters for Marketplace API
   const transitionParams = {
     ...quantityMaybe,
     ...bookingParamsMaybe,
@@ -424,34 +394,21 @@ export const speculateTransaction = (
   };
 
   const bodyParams = isTransition
-    ? {
-        id: transactionId,
-        transition: transitionName,
-        params: transitionParams,
-      }
-    : {
-        processAlias,
-        transition: transitionName,
-        params: transitionParams,
-      };
+    ? { id: transactionId, transition: transitionName, params: transitionParams }
+    : { processAlias, transition: transitionName, params: transitionParams };
 
-  const queryParams = {
-    include: ['booking', 'provider'],
-    expand: true,
-  };
+  const queryParams = { include: ['booking', 'provider'], expand: true };
 
   const handleSuccess = response => {
     const entities = denormalisedResponseEntities(response);
-    if (entities.length !== 1) {
-      throw new Error('Expected a resource in the speculate response');
-    }
+    if (entities.length !== 1) throw new Error('Expected a resource in the speculate response');
     const tx = entities[0];
     dispatch(speculateTransactionSuccess(tx));
   };
 
   const handleError = e => {
     log.error(e, 'speculate-transaction-failed', {
-      listingId: transitionParams.listingId.uuid,
+      listingId: transitionParams.listingId?.uuid,
       ...quantityMaybe,
       ...bookingParamsMaybe,
       ...orderData,
@@ -461,32 +418,21 @@ export const speculateTransaction = (
   };
 
   if (isTransition && isPrivilegedTransition) {
-    // transition privileged
     return transitionPrivileged({ isSpeculative: true, orderData, bodyParams, queryParams })
       .then(handleSuccess)
       .catch(handleError);
   } else if (isTransition) {
-    // transition non-privileged
-    return sdk.transactions
-      .transitionSpeculative(bodyParams, queryParams)
-      .then(handleSuccess)
-      .catch(handleError);
+    return sdk.transactions.transitionSpeculative(bodyParams, queryParams).then(handleSuccess).catch(handleError);
   } else if (isPrivilegedTransition) {
-    // initiate privileged
     return initiatePrivileged({ isSpeculative: true, orderData, bodyParams, queryParams })
       .then(handleSuccess)
       .catch(handleError);
   } else {
-    // initiate non-privileged
-    return sdk.transactions
-      .initiateSpeculative(bodyParams, queryParams)
-      .then(handleSuccess)
-      .catch(handleError);
+    return sdk.transactions.initiateSpeculative(bodyParams, queryParams).then(handleSuccess).catch(handleError);
   }
 };
 
-// StripeCustomer is a relantionship to currentUser
-// We need to fetch currentUser with correct params to include relationship
+// StripeCustomer (récupération pour l’UI des moyens de paiement)
 export const stripeCustomer = () => (dispatch, getState, sdk) => {
   dispatch(stripeCustomerRequest());
   const fetchCurrentUserOptions = {
@@ -497,7 +443,7 @@ export const stripeCustomer = () => (dispatch, getState, sdk) => {
   };
 
   return dispatch(fetchCurrentUser(fetchCurrentUserOptions))
-    .then(response => {
+    .then(() => {
       dispatch(stripeCustomerSuccess());
     })
     .catch(e => {
