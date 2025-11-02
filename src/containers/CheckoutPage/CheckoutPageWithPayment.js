@@ -1,5 +1,3 @@
-// src/containers/CheckoutPage/CheckoutPageWithPayment.js
-/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useMemo } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
