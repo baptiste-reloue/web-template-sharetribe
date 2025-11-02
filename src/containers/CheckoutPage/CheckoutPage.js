@@ -199,21 +199,35 @@ const EnhancedCheckoutPage = props => {
       }
     };
 
-    const chooseCard = () => {
-      const url = new URL(window.location.href);
-      url.searchParams.set('method', 'card');
-      history.push(`${location.pathname}?${url.searchParams.toString()}`);
-    };
+// ...dans CheckoutPage.js, à l'intérieur du bloc if (!chosenMethod) { ... }
 
-    const chooseCash = () => {
-      // Redirige vers la page dédiée Cash si elle existe dans le router
-      // Chemin voulu par toi : /l/:slug/:id/checkout-cash
-      if (listing?.id) {
-        history.push(
-          `/l/${createSlug(listingTitle)}/${listing.id.uuid}/checkout-cash`
-        );
-      }
+  const chooseCard = () => {
+    const updated = {
+      ...pageData,
+      orderData: { ...(pageData.orderData || {}), paymentMethod: 'card' },
     };
+    setPageData(updated);
+    // ⚠️ on persiste pour la page Stripe
+    storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('method', 'card');
+    history.push(`${location.pathname}?${url.searchParams.toString()}`);
+  };
+
+  const chooseCash = () => {
+    if (!listing?.id) return;
+
+    const updated = {
+      ...pageData,
+      orderData: { ...(pageData.orderData || {}), paymentMethod: 'cash' },
+    };
+    setPageData(updated);
+    // ⚠️ on persiste pour CheckoutCashPage
+    storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
+
+    history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}/checkout-cash`);
+  };
 
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
