@@ -1,3 +1,5 @@
+// src/containers/CheckoutPage/CheckoutPageWithPayment.js
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useMemo } from 'react';
 import { compose } from 'redux';
 import { connect } from 'react-redux';
@@ -13,17 +15,14 @@ import {
   confirmPayment as confirmPaymentThunk,
   stripeCustomer as stripeCustomerThunk,
   speculateTransaction as speculateTransactionThunk,
-
-  // ⬇️ notre config alias/transitions
   CARD_PROCESS_ALIAS,
   TX_REQUEST,
 } from './CheckoutPage.duck';
 
 import {
-  // helpers d’origine du template
+  // on garde seulement ces helpers
   getOrderParams,
   getInitialMessageParams,
-  hasRequiredOrderData,
   nextTransitionAfterRequest,
 } from './CheckoutPageTransactionHelpers';
 
@@ -32,13 +31,26 @@ import CustomTopbar from './CustomTopbar';
 
 import css from './CheckoutPage.module.css';
 
-// ----------------------------------------------
-
+// --------------------- helpers locaux (pas d'import manquant) ---------------------
 const getSearchParams = location => new URLSearchParams(location?.search || '');
+
+// Remplace hasRequiredOrderData : suffit pour booking ou achat qty
+const hasRequiredOrderDataLocal = orderData => {
+  if (!orderData) return false;
+  const { bookingDates, quantity } = orderData;
+  const hasBooking =
+    bookingDates &&
+    bookingDates.start &&
+    bookingDates.end;
+
+  const hasQty = typeof quantity === 'number' ? quantity > 0 : !!quantity;
+  return Boolean(hasBooking || hasQty);
+};
+// ---------------------------------------------------------------------------------
 
 const CheckoutPageWithPayment = props => {
   const {
-    // from parent (CheckoutPage.js)
+    // fournis par CheckoutPage.js
     sessionStorageKey,
     pageData,
     setPageData,
@@ -68,10 +80,14 @@ const CheckoutPageWithPayment = props => {
   const intl = useIntl();
   const location = useLocation();
 
-  // Récupérer pageData propre (depuis Redux + session)
+  // Récupère les données consolidées (Redux + sessionStorage)
   const data = useMemo(
-    () => handlePageData({ orderData: orderDataFromRedux, listing: listingFromRedux, transaction }, sessionStorageKey),
-    [orderDataFromRedux, listingFromRedux, transaction]
+    () =>
+      handlePageData(
+        { orderData: orderDataFromRedux, listing: listingFromRedux, transaction },
+        sessionStorageKey
+      ),
+    [orderDataFromRedux, listingFromRedux, transaction, sessionStorageKey]
   );
 
   const listing = ensureOwnListing(data?.listing);
@@ -79,47 +95,56 @@ const CheckoutPageWithPayment = props => {
   const methodFromUrl = getSearchParams(location).get('method');
   const isCardMode = methodFromUrl === 'card' || orderData?.paymentMethod === 'card';
 
-  // Toujours persister
+  // Toujours persister ce qu'on a
   useEffect(() => {
     storeData(orderData, listing, transaction, sessionStorageKey);
   }, [orderData, listing, transaction, sessionStorageKey]);
 
-  // 1) Sécurité: si pas connecté → rediriger (comportement template)
+  // Auth guard (comportement template)
   if (!currentUser) {
     return <NamedRedirect name="LoginPage" state={{ from: location }} />;
   }
 
-  // 2) Affichage page & entête
   const pageTitle = title || intl.formatMessage({ id: 'CheckoutPage.title' });
 
-  // 3) ⚡️ Auto-init Stripe en mode carte (si pas déjà initié)
+  // ⚡️ Auto-init Stripe en mode carte si pas déjà initialisé
   useEffect(() => {
-    if (!isCardMode) return;                  // ne touche pas le flux cash
-    if (!listing) return;                     // attendre l’annonce
-    if (!hasRequiredOrderData(orderData)) return; // attendre dates/qty
-    if (paymentIntent || transaction) return; // déjà initialisé
+    if (!isCardMode) return;                 // ne touche pas le flux cash
+    if (!listing) return;                    // attendre l’annonce
+    if (!hasRequiredOrderDataLocal(orderData)) return; // attendre dates/qty
+    if (paymentIntent || transaction) return;          // déjà initié
 
-    // Params d’ordre (dates, qty, etc.)
     const orderParams = getOrderParams(orderData, listing.id);
-
-    // Déclenche l’init sur l’alias CARTE, transition d’entrée standard
     onInitiateOrder(orderParams, CARD_PROCESS_ALIAS, null, TX_REQUEST, false).catch(() => {});
   }, [isCardMode, listing, orderData, paymentIntent, transaction]);
 
-  // 4) Optionnel: faire une speculate pour afficher un pricing à jour (si nécessaire)
+  // (Optionnel) speculative pour afficher un pricing juste
   useEffect(() => {
     if (!listing) return;
-    if (!hasRequiredOrderData(orderData)) return;
+    if (!hasRequiredOrderDataLocal(orderData)) return;
     const orderParams = getOrderParams(orderData, listing.id);
     onSpeculateTransaction(orderParams, CARD_PROCESS_ALIAS, null, TX_REQUEST, false).catch(() => {});
   }, [listing, orderData]);
 
-  // 5) Charger le customer Stripe (moyens de paiement sauvegardés)
+  // Charger le customer Stripe (PM sauvegardés)
   useEffect(() => {
     onStripeCustomer();
   }, []);
 
-  // 6) Rendu principal du checkout par carte
+  // Si on n'a pas encore l'annonce (SSR/latence), rend un état neutre
+  if (!listing) {
+    return (
+      <Page title={pageTitle} scrollingDisabled={scrollingDisabled}>
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+        <div className={css.contentContainer}>
+          <div className={css.orderFormContainer} style={{ textAlign: 'center', marginTop: '4rem' }}>
+            <FormattedMessage id="CheckoutPage.loadingListing" defaultMessage="Chargement de l’annonce en cours..." />
+          </div>
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <Page title={pageTitle} scrollingDisabled={scrollingDisabled}>
       <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
@@ -130,46 +155,31 @@ const CheckoutPageWithPayment = props => {
             <FormattedMessage id="CheckoutPageWithPayment.heading" defaultMessage="Finaliser la demande de location" />
           </h1>
 
-          {/* Lieu / visuel / résumé (selon ton template) */}
+          {/* Exemple d’info annonce (adapte selon ton template) */}
           {showListingImage ? (
             <div className={css.listingInfo}>
               <div className={css.listingTitle}>{listing?.attributes?.title}</div>
-              {/* ici, ton image et/ou localisation si tu le souhaites */}
             </div>
           ) : null}
 
-          {/* Bloc formulaire additionnel (message au propriétaire) */}
-          <div className={css.fieldWrapper}>
-            <label className={css.fieldLabel}>
-              <FormattedMessage id="CheckoutPageWithPayment.additionalInfo" defaultMessage="Informations additionnelles" />
-            </label>
-            {/* Le template gère souvent ce champ ailleurs; garde comme d’habitude */}
-          </div>
-
-          {/* ----- BLOC STRIPE : s’affiche dès que le PaymentIntent est prêt ----- */}
-          {/* Ton composant StripeCardForm habituel se base sur `paymentIntent` présent dans Redux */}
-          {/* Si ton template affiche le formulaire juste après INITIATE, tu n'as rien à changer ici : */}
-          {/* Le submit enverra ensuite la transition suivante (ex: 'transition/confirm-payment') */}
+          {/* Formulaire additionnel / notes au propriétaire → géré ailleurs dans le template */}
 
           {/* Bouton submit template (si tu le conserves) */}
           <button
             type="button"
             className={`button ${css.submitButton}`}
             onClick={() => {
-              // Dans beaucoup de templates, le clic submit confirme
-              // (ici on laisse la logique par défaut; sinon tu peux
-              // déclencher un confirm sur la transition suivante):
               const next = nextTransitionAfterRequest(); // helper du template
               if (transaction && next) {
                 onConfirmPayment(transaction.id, next, getInitialMessageParams(orderData));
               }
             }}
-            disabled={!listing || !hasRequiredOrderData(orderData)}
+            disabled={!hasRequiredOrderDataLocal(orderData)}
           >
             <FormattedMessage id="CheckoutPageWithPayment.submit" defaultMessage="Confirmer la demande de location" />
           </button>
 
-          {/* Affichage d’erreurs éventuelles */}
+          {/* Erreurs éventuelles */}
           {initiateOrderError ? (
             <div className={css.error}>
               {intl.formatMessage({ id: 'CheckoutPageWithPayment.initiateError' })}
