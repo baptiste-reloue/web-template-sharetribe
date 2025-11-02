@@ -1,224 +1,536 @@
-import React, { useEffect, useMemo } from 'react';
-import { compose } from 'redux';
-import { connect } from 'react-redux';
-import { useLocation } from 'react-router-dom';
-import { useIntl, FormattedMessage } from 'react-intl';
+import React, { useState } from 'react';
 
-import { isScrollingDisabled } from '../../ducks/ui.duck';
-import { ensureOwnListing } from '../../util/data';
-import { NamedRedirect, Page } from '../../components';
+// Import contexts and util modules
+import { FormattedMessage, intlShape } from '../../util/reactIntl';
+import { pathByRouteName } from '../../util/routes';
+import { isValidCurrencyForTransactionProcess } from '../../util/fieldHelpers.js';
+import { propTypes } from '../../util/types';
+import { ensureTransaction } from '../../util/data';
+import { createSlug } from '../../util/urlHelpers';
+import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
+import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
 
-import {
-  initiateOrder as initiateOrderThunk,
-  confirmPayment as confirmPaymentThunk,
-  stripeCustomer as stripeCustomerThunk,
-  speculateTransaction as speculateTransactionThunk,
-  CARD_PROCESS_ALIAS,
-  TX_REQUEST,
-} from './CheckoutPage.duck';
+// Import shared components
+import { H3, H4, NamedLink, OrderBreakdown, Page } from '../../components';
 
 import {
-  // on garde seulement ces helpers
-  getOrderParams,
-  getInitialMessageParams,
-  nextTransitionAfterRequest,
-} from './CheckoutPageTransactionHelpers';
+  bookingDatesMaybe,
+  getBillingDetails,
+  getFormattedTotalPrice,
+  getShippingDetailsMaybe,
+  getTransactionTypeData,
+  hasDefaultPaymentMethod,
+  hasPaymentExpired,
+  hasTransactionPassedPendingPayment,
+  processCheckoutWithPayment,
+  setOrderPageInitialValues,
+} from './CheckoutPageTransactionHelpers.js';
+import { getErrorMessages } from './ErrorMessages';
 
-import { storeData, handlePageData } from './CheckoutPageSessionHelpers';
 import CustomTopbar from './CustomTopbar';
+import StripePaymentForm from './StripePaymentForm/StripePaymentForm';
+import DetailsSideCard from './DetailsSideCard';
+import MobileListingImage from './MobileListingImage';
+import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// --------------------- helpers locaux (pas d'import manquant) ---------------------
-const getSearchParams = location => new URLSearchParams(location?.search || '');
+// ------------------------------------------------------------------
+// RELOUE: alias process carte (utilisé uniquement si l’utilisateur a
+// choisi "carte"). On ne modifie rien d’autre.
+// ------------------------------------------------------------------
+const CARD_PROCESS_ALIAS = 'default-booking/release-1';
 
-// Remplace hasRequiredOrderData : suffit pour booking ou achat qty
-const hasRequiredOrderDataLocal = orderData => {
-  if (!orderData) return false;
-  const { bookingDates, quantity } = orderData;
-  const hasBooking =
-    bookingDates &&
-    bookingDates.start &&
-    bookingDates.end;
+// Stripe PaymentIntent statuses, where user actions are already completed
+// https://stripe.com/docs/payments/payment-intents/status
+const STRIPE_PI_USER_ACTIONS_DONE_STATUSES = ['processing', 'requires_capture', 'succeeded'];
 
-  const hasQty = typeof quantity === 'number' ? quantity > 0 : !!quantity;
-  return Boolean(hasBooking || hasQty);
+// Payment charge options
+const ONETIME_PAYMENT = 'ONETIME_PAYMENT';
+const PAY_AND_SAVE_FOR_LATER_USE = 'PAY_AND_SAVE_FOR_LATER_USE';
+const USE_SAVED_CARD = 'USE_SAVED_CARD';
+
+const paymentFlow = (selectedPaymentMethod, saveAfterOnetimePayment) => {
+  return selectedPaymentMethod === 'defaultCard'
+    ? USE_SAVED_CARD
+    : saveAfterOnetimePayment
+    ? PAY_AND_SAVE_FOR_LATER_USE
+    : ONETIME_PAYMENT;
 };
-// ---------------------------------------------------------------------------------
 
-const CheckoutPageWithPayment = props => {
+const capitalizeString = s => `${s.charAt(0).toUpperCase()}${s.substr(1)}`;
+
+/**
+ * Prefix the properties of the chosen price variant as first level properties for the protected data of the transaction
+ */
+const prefixPriceVariantProperties = priceVariant => {
+  if (!priceVariant) {
+    return {};
+  }
+  const entries = Object.entries(priceVariant).map(([key, value]) => {
+    return [`priceVariant${capitalizeString(key)}`, value];
+  });
+  return Object.fromEntries(entries);
+};
+
+/**
+ * Construct orderParams object using pageData from session storage, shipping details, and optional payment params.
+ */
+const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
+  const quantity = pageData.orderData?.quantity;
+  const quantityMaybe = quantity ? { quantity } : {};
+  const seats = pageData.orderData?.seats;
+  const seatsMaybe = seats ? { seats } : {};
+  const deliveryMethod = pageData.orderData?.deliveryMethod;
+  const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
+  const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
+
+  // price variant data for fixed duration bookings
+  const priceVariantName = pageData.orderData?.priceVariantName;
+  const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
+  const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
+  const priceVariantMaybe = priceVariant ? prefixPriceVariantProperties(priceVariant) : {};
+
+  const protectedDataMaybe = {
+    protectedData: {
+      ...getTransactionTypeData(listingType, unitType, config),
+      ...deliveryMethodMaybe,
+      ...shippingDetails,
+      ...priceVariantMaybe,
+    },
+  };
+
+  const orderParams = {
+    listingId: pageData?.listing?.id,
+    ...deliveryMethodMaybe,
+    ...quantityMaybe,
+    ...seatsMaybe,
+    ...bookingDatesMaybe(pageData.orderData?.bookingDates),
+    ...priceVariantNameMaybe,
+    ...protectedDataMaybe,
+    ...optionalPaymentParams,
+  };
+  return orderParams;
+};
+
+// ------------------------------------------------------------------
+// RELOUE: on autorise un override d'alias process pour le cas "carte"
+// afin de forcer default-booking/release-1 si l’étape précédente
+// (page de choix) a mis paymentMethod = 'card' dans pageData.
+// ------------------------------------------------------------------
+const fetchSpeculatedTransactionIfNeeded = (
+  orderParams,
+  pageData,
+  fetchSpeculatedTransaction,
+  processAliasOverride // <-- nouveau param OPTIONNEL
+) => {
+  const tx = pageData ? pageData.transaction : null;
+  const pageDataListing = pageData.listing;
+
+  // Détermination du process à utiliser pour la logique des transitions
+  const rawAlias =
+    processAliasOverride ||
+    pageDataListing?.attributes?.publicData?.transactionProcessAlias;
+
+  const processName = tx?.attributes?.processName || rawAlias?.split('/')?.[0];
+  const process = processName ? getProcess(processName) : null;
+
+  // If transaction has passed payment-pending state, speculated tx is not needed.
+  const shouldFetchSpeculatedTransaction =
+    !!pageData?.listing?.id &&
+    !!pageData.orderData &&
+    !!process &&
+    !hasTransactionPassedPendingPayment(tx, process);
+
+  if (shouldFetchSpeculatedTransaction) {
+    const processAlias = rawAlias;
+    const transactionId = tx ? tx.id : null;
+    const isInquiryInPaymentProcess =
+      tx?.attributes?.lastTransition === process.transitions.INQUIRE;
+
+    const requestTransition = isInquiryInPaymentProcess
+      ? process.transitions.REQUEST_PAYMENT_AFTER_INQUIRY
+      : process.transitions.REQUEST_PAYMENT;
+    const isPrivileged = process.isPrivileged(requestTransition);
+
+    fetchSpeculatedTransaction(
+      orderParams,
+      processAlias,
+      transactionId,
+      requestTransition,
+      isPrivileged
+    );
+  }
+};
+
+/**
+ * Load initial data for the page + speculative tx
+ */
+export const loadInitialDataForStripePayments = ({
+  pageData,
+  fetchSpeculatedTransaction,
+  fetchStripeCustomer,
+  config,
+}) => {
+  // Fetch currentUser with stripeCustomer entity
+  fetchStripeCustomer();
+
+  // Build order params
+  const shippingDetails = {};
+  const optionalPaymentParams = {};
+  const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
+
+  // ----------------------------------------------------------------
+  // RELOUE: si la page a été atteinte via "payer par carte",
+  // on force l’alias du process à celui de la carte.
+  // (Cela garantit la création du PaymentIntent Stripe)
+  // ----------------------------------------------------------------
+  const processAliasOverride =
+    pageData?.orderData?.paymentMethod === 'card' ? CARD_PROCESS_ALIAS : undefined;
+
+  fetchSpeculatedTransactionIfNeeded(
+    orderParams,
+    pageData,
+    fetchSpeculatedTransaction,
+    processAliasOverride
+  );
+};
+
+const handleSubmit = (values, process, props, stripe, submitting, setSubmitting) => {
+  if (submitting) {
+    return;
+  }
+  setSubmitting(true);
+
   const {
-    // fournis par CheckoutPage.js
-    sessionStorageKey,
+    history,
+    config,
+    routeConfiguration,
+    speculatedTransaction,
+    currentUser,
+    stripeCustomerFetched,
+    paymentIntent,
+    dispatch,
+    onInitiateOrder,
+    onConfirmCardPayment,
+    onConfirmPayment,
+    onSendMessage,
+    onSavePaymentMethod,
+    onSubmitCallback,
     pageData,
     setPageData,
-    title,
-    showListingImage,
+    sessionStorageKey,
+  } = props;
+  const { card, message, paymentMethod: selectedPaymentMethod, formValues } = values;
+  const { saveAfterOnetimePayment: saveAfterOnetimePaymentRaw } = formValues;
 
-    // redux
-    scrollingDisabled,
-    currentUser,
-    listing: listingFromRedux,
-    orderData: orderDataFromRedux,
-    transaction,
+  const saveAfterOnetimePayment =
+    Array.isArray(saveAfterOnetimePaymentRaw) && saveAfterOnetimePaymentRaw.length > 0;
+  const selectedPaymentFlow = paymentFlow(selectedPaymentMethod, saveAfterOnetimePayment);
+  const hasDefaultPaymentMethodSaved = hasDefaultPaymentMethod(stripeCustomerFetched, currentUser);
+  const stripePaymentMethodId = hasDefaultPaymentMethodSaved
+    ? currentUser?.stripeCustomer?.defaultPaymentMethod?.attributes?.stripePaymentMethodId
+    : null;
+
+  const hasPaymentIntentUserActionsDone =
+    paymentIntent && STRIPE_PI_USER_ACTIONS_DONE_STATUSES.includes(paymentIntent.status);
+
+  const requestPaymentParams = {
+    pageData,
+    speculatedTransaction,
+    stripe,
+    card,
+    billingDetails: getBillingDetails(formValues, currentUser),
+    message,
     paymentIntent,
-    initiateOrderError,
-    confirmCardPaymentError,
-
-    // thunks
+    hasPaymentIntentUserActionsDone,
+    stripePaymentMethodId,
+    process,
     onInitiateOrder,
+    onConfirmCardPayment,
     onConfirmPayment,
-    onSpeculateTransaction,
-    onStripeCustomer,
+    onSendMessage,
+    onSavePaymentMethod,
+    sessionStorageKey,
+    stripeCustomer: currentUser?.stripeCustomer,
+    isPaymentFlowUseSavedCard: selectedPaymentFlow === USE_SAVED_CARD,
+    isPaymentFlowPayAndSaveCard: selectedPaymentFlow === PAY_AND_SAVE_FOR_LATER_USE,
+    setPageData,
+  };
 
-    // misc
+  const shippingDetails = getShippingDetailsMaybe(formValues);
+  const optionalPaymentParams =
+    selectedPaymentFlow === USE_SAVED_CARD && hasDefaultPaymentMethodSaved
+      ? { paymentMethod: stripePaymentMethodId }
+      : selectedPaymentFlow === PAY_AND_SAVE_FOR_LATER_USE
+      ? { setupPaymentMethodForSaving: true }
+      : {};
+
+  const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
+
+  processCheckoutWithPayment(orderParams, requestPaymentParams)
+    .then(response => {
+      const { orderId, messageSuccess, paymentMethodSaved } = response;
+      setSubmitting(false);
+
+      const initialMessageFailedToTransaction = messageSuccess ? null : orderId;
+      const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
+        id: orderId.uuid,
+      });
+      const initialValues = {
+        initialMessageFailedToTransaction,
+        savePaymentMethodFailed: !paymentMethodSaved,
+      };
+
+      setOrderPageInitialValues(initialValues, routeConfiguration, dispatch);
+      onSubmitCallback();
+      history.push(orderDetailsPath);
+    })
+    .catch(err => {
+      console.error(err);
+      setSubmitting(false);
+    });
+};
+
+const onStripeInitialized = (stripe, process, props) => {
+  const { paymentIntent, onRetrievePaymentIntent, pageData } = props;
+  const tx = pageData?.transaction || null;
+
+  const shouldFetchPaymentIntent =
+    stripe &&
+    !paymentIntent &&
+    tx?.id &&
+    process?.getState(tx) === process?.states.PENDING_PAYMENT &&
+    !hasPaymentExpired(tx, process);
+
+  if (shouldFetchPaymentIntent) {
+    const { stripePaymentIntentClientSecret } =
+      tx.attributes.protectedData?.stripePaymentIntents?.default || {};
+
+    onRetrievePaymentIntent({ stripe, stripePaymentIntentClientSecret });
+  }
+};
+
+/**
+ * A component that renders the checkout page with payment.
+ */
+export const CheckoutPageWithPayment = props => {
+  const [submitting, setSubmitting] = useState(false);
+  const [stripe, setStripe] = useState(null);
+
+  const {
+    scrollingDisabled,
+    speculateTransactionError,
+    speculatedTransaction: speculatedTransactionMaybe,
+    isClockInSync,
+    initiateOrderError,
+    confirmPaymentError,
+    intl,
+    currentUser,
+    confirmCardPaymentError,
+    showListingImage,
+    paymentIntent,
+    retrievePaymentIntentError,
+    stripeCustomerFetched,
+    pageData,
+    processName,
+    listingTitle,
+    title,
     config,
   } = props;
 
-  const intl = useIntl();
-  const location = useLocation();
+  const listingNotFound =
+    isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
+    isTransactionInitiateListingNotFoundError(initiateOrderError);
 
-  // Récupère les données consolidées (Redux + sessionStorage)
-  const data = useMemo(
-    () =>
-      handlePageData(
-        { orderData: orderDataFromRedux, listing: listingFromRedux, transaction },
-        sessionStorageKey
-      ),
-    [orderDataFromRedux, listingFromRedux, transaction, sessionStorageKey]
+  const { listing, transaction, orderData } = pageData;
+  const existingTransaction = ensureTransaction(transaction);
+  const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
+
+  const tx =
+    existingTransaction?.attributes?.lineItems?.length > 0
+      ? existingTransaction
+      : speculatedTransaction;
+  const timeZone = listing?.attributes?.availabilityPlan?.timezone;
+  const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
+  const priceVariantName = tx.attributes.protectedData?.priceVariantName;
+
+  const txBookingMaybe = tx?.booking?.id ? { booking: tx.booking, timeZone } : {};
+
+  const breakdown =
+    tx.id && tx.attributes.lineItems?.length > 0 ? (
+      <OrderBreakdown
+        className={css.orderBreakdown}
+        userRole="customer"
+        transaction={tx}
+        {...txBookingMaybe}
+        currency={config.currency}
+        marketplaceName={config.marketplaceName}
+      />
+    ) : null;
+
+  const totalPrice =
+    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
+
+  const process = processName ? getProcess(processName) : null;
+  const transitions = process.transitions;
+  const isPaymentExpired = hasPaymentExpired(existingTransaction, process, isClockInSync);
+
+  const showPaymentForm = !!(
+    currentUser &&
+    !listingNotFound &&
+    !initiateOrderError &&
+    !speculateTransactionError &&
+    !retrievePaymentIntentError &&
+    !isPaymentExpired
   );
 
-  const listing = ensureOwnListing(data?.listing);
-  const orderData = data?.orderData || {};
-  const methodFromUrl = getSearchParams(location).get('method');
-  const isCardMode = methodFromUrl === 'card' || orderData?.paymentMethod === 'card';
+  const firstImage = listing?.images?.length > 0 ? listing.images[0] : null;
 
-  // Toujours persister ce qu'on a
-  useEffect(() => {
-    storeData(orderData, listing, transaction, sessionStorageKey);
-  }, [orderData, listing, transaction, sessionStorageKey]);
+  const listingLink = (
+    <NamedLink
+      name="ListingPage"
+      params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}
+    >
+      <FormattedMessage id="CheckoutPage.errorlistingLinkText" />
+    </NamedLink>
+  );
 
-  // Auth guard (comportement template)
-  if (!currentUser) {
-    return <NamedRedirect name="LoginPage" state={{ from: location }} />;
-  }
+  const errorMessages = getErrorMessages(
+    listingNotFound,
+    initiateOrderError,
+    isPaymentExpired,
+    retrievePaymentIntentError,
+    speculateTransactionError,
+    listingLink
+  );
 
-  const pageTitle = title || intl.formatMessage({ id: 'CheckoutPage.title' });
+  const txTransitions = existingTransaction?.attributes?.transitions || [];
+  const hasInquireTransition = txTransitions.find(tr => tr.transition === transitions.INQUIRE);
+  const showInitialMessageInput = !hasInquireTransition;
 
-  // ⚡️ Auto-init Stripe en mode carte si pas déjà initialisé
-  useEffect(() => {
-    if (!isCardMode) return;                 // ne touche pas le flux cash
-    if (!listing) return;                    // attendre l’annonce
-    if (!hasRequiredOrderDataLocal(orderData)) return; // attendre dates/qty
-    if (paymentIntent || transaction) return;          // déjà initié
+  const userName = currentUser?.attributes?.profile
+    ? `${currentUser.attributes.profile.firstName} ${currentUser.attributes.profile.lastName}`
+    : null;
 
-    const orderParams = getOrderParams(orderData, listing.id);
-    onInitiateOrder(orderParams, CARD_PROCESS_ALIAS, null, TX_REQUEST, false).catch(() => {});
-  }, [isCardMode, listing, orderData, paymentIntent, transaction]);
+  const hasPaymentIntentUserActionsDone =
+    paymentIntent && STRIPE_PI_USER_ACTIONS_DONE_STATUSES.includes(paymentIntent.status);
 
-  // (Optionnel) speculative pour afficher un pricing juste
-  useEffect(() => {
-    if (!listing) return;
-    if (!hasRequiredOrderDataLocal(orderData)) return;
-    const orderParams = getOrderParams(orderData, listing.id);
-    onSpeculateTransaction(orderParams, CARD_PROCESS_ALIAS, null, TX_REQUEST, false).catch(() => {});
-  }, [listing, orderData]);
+  const initialValuesForStripePayment = { name: userName, recipientName: userName };
+  const askShippingDetails =
+    orderData?.deliveryMethod === 'shipping' &&
+    !hasTransactionPassedPendingPayment(existingTransaction, process);
 
-  // Charger le customer Stripe (PM sauvegardés)
-  useEffect(() => {
-    onStripeCustomer();
-  }, []);
+  const isStripeCompatibleCurrency = isValidCurrencyForTransactionProcess(
+    transactionProcessAlias,
+    listing.attributes.price.currency,
+    'stripe'
+  );
 
-  // Si on n'a pas encore l'annonce (SSR/latence), rend un état neutre
-  if (!listing) {
+  if (!isStripeCompatibleCurrency) {
     return (
-      <Page title={pageTitle} scrollingDisabled={scrollingDisabled}>
+      <Page title={title} scrollingDisabled={scrollingDisabled}>
         <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
         <div className={css.contentContainer}>
-          <div className={css.orderFormContainer} style={{ textAlign: 'center', marginTop: '4rem' }}>
-            <FormattedMessage id="CheckoutPage.loadingListing" defaultMessage="Chargement de l’annonce en cours..." />
-          </div>
+          <section className={css.incompatibleCurrency}>
+            <H4 as="h1" className={css.heading}>
+              <FormattedMessage id="CheckoutPage.incompatibleCurrency" />
+            </H4>
+          </section>
         </div>
       </Page>
     );
   }
 
   return (
-    <Page title={pageTitle} scrollingDisabled={scrollingDisabled}>
+    <Page title={title} scrollingDisabled={scrollingDisabled}>
       <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
-
       <div className={css.contentContainer}>
+        <MobileListingImage
+          listingTitle={listingTitle}
+          author={listing?.author}
+          firstImage={firstImage}
+          layoutListingImageConfig={config.layout.listingImage}
+          showListingImage={showListingImage}
+        />
         <div className={css.orderFormContainer}>
-          <h1 className={css.orderHeading}>
-            <FormattedMessage id="CheckoutPageWithPayment.heading" defaultMessage="Finaliser la demande de location" />
-          </h1>
+          <div className={css.headingContainer}>
+            <H3 as="h1" className={css.heading}>
+              {title}
+            </H3>
+            <H4 as="h2" className={css.detailsHeadingMobile}>
+              <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
+            </H4>
+          </div>
+          <MobileOrderBreakdown
+            speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
+            breakdown={breakdown}
+            priceVariantName={priceVariantName}
+          />
+          <section className={css.paymentContainer}>
+            {errorMessages.initiateOrderErrorMessage}
+            {errorMessages.listingNotFoundErrorMessage}
+            {errorMessages.speculateErrorMessage}
+            {errorMessages.retrievePaymentIntentErrorMessage}
+            {errorMessages.paymentExpiredMessage}
 
-          {/* Exemple d’info annonce (adapte selon ton template) */}
-          {showListingImage ? (
-            <div className={css.listingInfo}>
-              <div className={css.listingTitle}>{listing?.attributes?.title}</div>
-            </div>
-          ) : null}
-
-          {/* Formulaire additionnel / notes au propriétaire → géré ailleurs dans le template */}
-
-          {/* Bouton submit template (si tu le conserves) */}
-          <button
-            type="button"
-            className={`button ${css.submitButton}`}
-            onClick={() => {
-              const next = nextTransitionAfterRequest(); // helper du template
-              if (transaction && next) {
-                onConfirmPayment(transaction.id, next, getInitialMessageParams(orderData));
-              }
-            }}
-            disabled={!hasRequiredOrderDataLocal(orderData)}
-          >
-            <FormattedMessage id="CheckoutPageWithPayment.submit" defaultMessage="Confirmer la demande de location" />
-          </button>
-
-          {/* Erreurs éventuelles */}
-          {initiateOrderError ? (
-            <div className={css.error}>
-              {intl.formatMessage({ id: 'CheckoutPageWithPayment.initiateError' })}
-            </div>
-          ) : null}
-          {confirmCardPaymentError ? (
-            <div className={css.error}>
-              {intl.formatMessage({ id: 'CheckoutPageWithPayment.confirmError' })}
-            </div>
-          ) : null}
+            {showPaymentForm ? (
+              <StripePaymentForm
+                className={css.paymentForm}
+                onSubmit={values =>
+                  handleSubmit(values, process, props, stripe, submitting, setSubmitting)
+                }
+                inProgress={submitting}
+                formId="CheckoutPagePaymentForm"
+                authorDisplayName={listing?.author?.attributes?.profile?.displayName}
+                showInitialMessageInput={showInitialMessageInput}
+                initialValues={initialValuesForStripePayment}
+                initiateOrderError={initiateOrderError}
+                confirmCardPaymentError={confirmCardPaymentError}
+                confirmPaymentError={confirmPaymentError}
+                hasHandledCardPayment={hasPaymentIntentUserActionsDone}
+                loadingData={!stripeCustomerFetched}
+                defaultPaymentMethod={
+                  hasDefaultPaymentMethod(stripeCustomerFetched, currentUser)
+                    ? currentUser.stripeCustomer.defaultPaymentMethod
+                    : null
+                }
+                paymentIntent={paymentIntent}
+                onStripeInitialized={stripe => {
+                  setStripe(stripe);
+                  return onStripeInitialized(stripe, process, props);
+                }}
+                askShippingDetails={askShippingDetails}
+                showPickUplocation={orderData?.deliveryMethod === 'pickup'}
+                listingLocation={listing?.attributes?.publicData?.location}
+                totalPrice={totalPrice}
+                locale={config.localization.locale}
+                stripePublishableKey={config.stripe.publishableKey}
+                marketplaceName={config.marketplaceName}
+                isBooking={isBookingProcessAlias(transactionProcessAlias)}
+                isFuzzyLocation={config.maps.fuzzy.enabled}
+              />
+            ) : null}
+          </section>
         </div>
+
+        <DetailsSideCard
+          listing={listing}
+          listingTitle={listingTitle}
+          priceVariantName={priceVariantName}
+          author={listing?.author}
+          firstImage={firstImage}
+          layoutListingImageConfig={config.layout.listingImage}
+          speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
+          isInquiryProcess={false}
+          processName={processName}
+          breakdown={breakdown}
+          showListingImage={showListingImage}
+          intl={intl}
+        />
       </div>
     </Page>
   );
 };
 
-// ----------------------- Redux wiring -----------------------
-const mapStateToProps = state => {
-  const { listing, orderData, transaction, initiateOrderError } = state.CheckoutPage;
-  const { currentUser } = state.user;
-  const { paymentIntent, confirmCardPaymentError } = state.stripe;
-
-  return {
-    scrollingDisabled: isScrollingDisabled(state),
-    currentUser,
-    listing,
-    orderData,
-    transaction,
-    paymentIntent,
-    initiateOrderError,
-    confirmCardPaymentError,
-  };
-};
-
-const mapDispatchToProps = dispatch => ({
-  onInitiateOrder: (params, alias, txId, transition, isPriv) =>
-    dispatch(initiateOrderThunk(params, alias, txId, transition, isPriv)),
-  onConfirmPayment: (id, name, p) => dispatch(confirmPaymentThunk(id, name, p)),
-  onSpeculateTransaction: (params, alias, txId, transition, isPriv) =>
-    dispatch(speculateTransactionThunk(params, alias, txId, transition, isPriv)),
-  onStripeCustomer: () => dispatch(stripeCustomerThunk()),
-});
-
-export default compose(connect(mapStateToProps, mapDispatchToProps))(CheckoutPageWithPayment);
+export default CheckoutPageWithPayment;
