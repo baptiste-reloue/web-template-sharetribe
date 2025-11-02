@@ -38,8 +38,8 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const DEFAULT_PROCESS_KEY = 'default-booking/release-1';
-const CASH_PROCESS_KEY = 'reloue-booking-cash/release-1';
+const CARD_PROCESS_KEY = 'default-booking';
+const CASH_PROCESS_KEY = 'reloue-booking-cash';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
 // Helpers
@@ -53,14 +53,14 @@ const computeProcessName = (pageData, forceCard) => {
   if (txProc) return resolveLatestProcessName(txProc);
 
   // Si on force carte via URL -> toujours default-booking
-  if (forceCard) return resolveLatestProcessName(DEFAULT_PROCESS_KEY);
+  if (forceCard) return resolveLatestProcessName(CARD_PROCESS_KEY);
 
   // Si choix cash en mémoire -> process cash
   if (orderData?.paymentMethod === 'cash') return resolveLatestProcessName(CASH_PROCESS_KEY);
 
   // Sinon alias éventuel de l’annonce, à défaut default-booking
   const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
-  const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
+  const key = alias ? alias.split('/')[0] : CARD_PROCESS_KEY;
   return resolveLatestProcessName(key);
 };
 
@@ -208,7 +208,7 @@ const EnhancedCheckoutPage = props => {
   // Contexte d'affichage
   const listingTitle = listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(listing?.author, '');
-  const safeProcessKey = processName || DEFAULT_PROCESS_KEY;
+  const safeProcessKey = processName || CARD_PROCESS_KEY;
 
   const title = intl.formatMessage(
     { id: `CheckoutPage.${safeProcessKey}.title` },
