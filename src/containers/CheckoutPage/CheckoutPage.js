@@ -38,8 +38,8 @@ import CheckoutPageWithPayment from './CheckoutPageWithPayment';
 import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const DEFAULT_PROCESS_KEY = 'default-booking';
-const CASH_PROCESS_KEY = 'reloue-booking-cash';
+const DEFAULT_PROCESS_KEY = 'default-booking/release-1';
+const CASH_PROCESS_KEY = 'reloue-booking-cash/release-1';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
 // Helpers
