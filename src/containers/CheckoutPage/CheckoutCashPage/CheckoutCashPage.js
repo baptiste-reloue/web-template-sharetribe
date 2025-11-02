@@ -10,10 +10,10 @@ import { propTypes } from '../../../util/types';
 import { ensureTransaction, userDisplayNameAsString } from '../../../util/data';
 import { pathByRouteName } from '../../../util/routes';
 
-import { Page, H3, H4, OrderBreakdown } from '../../../components';
+import { Page, H3, H4, OrderBreakdown, NamedLink } from '../../../components';
 
 import { storeData, handlePageData } from '../CheckoutPageSessionHelpers';
-import { initiateCashOrder, setInitialValues as setInitialValuesDuck } from '../CheckoutPage.duck';
+import { initiateOrder, setInitialValues as setInitialValuesDuck } from '../CheckoutPage.duck';
 import { getFormattedTotalPrice } from '../CheckoutPageTransactionHelpers';
 
 import CustomTopbar from '../CustomTopbar';
@@ -24,8 +24,10 @@ import MobileOrderBreakdown from '../MobileOrderBreakdown';
 import css from '../CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const PROCESS_KEY = 'reloue-booking-cash';
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+const TX_REQUEST = 'transition/request';
 
+// Construit les params d’ordre pour le process cash (mêmes dates/qty/delivery)
 const buildOrderParams = (pageData, form) => {
   const { orderData = {}, listing } = pageData || {};
   const { bookingDates, quantity, deliveryMethod } = orderData;
@@ -40,6 +42,7 @@ const buildOrderParams = (pageData, form) => {
     ...bookingParams,
     ...(quantity ? { stockReservationQuantity: quantity } : {}),
     ...(deliveryMethod ? { deliveryMethod } : {}),
+    // On passe aussi un message initial & des infos de contact côté protectedData
     protectedData: {
       ...(orderData.protectedData || {}),
       paymentMethod: 'cash',
@@ -52,13 +55,7 @@ const buildOrderParams = (pageData, form) => {
 };
 
 const CheckoutCashPageComponent = props => {
-  const {
-    scrollingDisabled,
-    orderData,
-    listing,
-    transaction,
-    onInitiateCashOrder,
-  } = props;
+  const { scrollingDisabled, orderData, listing, transaction, onInitiateOrder } = props;
 
   const config = useConfiguration();
   const routeConfiguration = useRouteConfiguration();
@@ -69,24 +66,24 @@ const CheckoutCashPageComponent = props => {
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', message: '' });
 
-  // Lire données session/Redux
+  // Lecture (Redux + sessionStorage) et forcer le mode 'cash'
   useEffect(() => {
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history) || {};
-    // Forcer le mode cash dans l'état local
     const merged = { ...data, orderData: { ...(data.orderData || {}), paymentMethod: 'cash' } };
     storeData(merged.orderData, merged.listing, merged.transaction, STORAGE_KEY);
     setPageData(merged);
-  }, []);
+  }, []); // mount only
 
   const listingTitle = pageData?.listing?.attributes?.title || '';
   const authorDisplayName = userDisplayNameAsString(pageData?.listing?.author, '');
   const title = intl.formatMessage(
-    { id: `CheckoutPage.${PROCESS_KEY}.title` },
+    { id: 'CheckoutPage.reloue-booking-cash.title', defaultMessage: 'Demande de location (espèces) — {listingTitle}' },
     { listingTitle, authorDisplayName }
   );
 
   const existingTx = ensureTransaction(pageData?.transaction);
   const timeZone = pageData?.listing?.attributes?.availabilityPlan?.timezone;
+  const firstImage = pageData?.listing?.images?.length ? pageData.listing.images[0] : null;
 
   const breakdown =
     existingTx?.id && existingTx?.attributes?.lineItems?.length > 0 ? (
@@ -103,40 +100,77 @@ const CheckoutCashPageComponent = props => {
   const totalPrice =
     existingTx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(existingTx, intl) : null;
 
-  const firstImage = pageData?.listing?.images?.length ? pageData.listing.images[0] : null;
-
   const onSubmit = e => {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
 
     const params = buildOrderParams(pageData, form);
-    onInitiateCashOrder(params, existingTx?.id)
-      .then(res => {
-        const id = res?.data?.data?.id || res?.payload?.data?.data?.id || null;
-        history.push(
-          id
-            ? pathByRouteName('OrderDetailsPage', routeConfiguration, { id })
-            : pathByRouteName('ListingPage', routeConfiguration, {
-                id: pageData?.listing?.id?.uuid,
-              })
-        );
+
+    // ✅ Utilise le thunk générique déjà présent dans ton duck
+    onInitiateOrder(params, CASH_PROCESS_ALIAS, existingTx?.id || null, TX_REQUEST, false)
+      .then(order => {
+        // L’API retourne soit un objet denormalized (payload) soit la réponse SDK
+        const orderId =
+          order?.id?.uuid ||
+          order?.payload?.id?.uuid ||
+          order?.data?.data?.id?.uuid ||
+          order?.data?.data?.id ||
+          order?.payload?.data?.data?.id ||
+          null;
+
+        if (orderId) {
+          const detailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, { id: orderId });
+          history.push(detailsPath);
+        } else {
+          // fallback: retour à l’annonce
+          history.push(
+            pathByRouteName('ListingPage', routeConfiguration, {
+              id: pageData?.listing?.id?.uuid,
+            })
+          );
+        }
       })
-      .catch(() => {})
+      .catch(() => {
+        // minimal: garder silencieux, ou afficher un message d’erreur si tu veux
+      })
       .finally(() => setSubmitting(false));
   };
 
-  // Changer de mode → retour à l'écran de choix (CheckoutPage)
   const handleChangeMode = () => {
-    history.replace(
-      pathByRouteName('CheckoutPage', routeConfiguration, {
-        id: pageData?.listing?.id?.uuid,
-        slug: pageData?.listing
-          ? pageData.listing.attributes.title.toLowerCase().replace(/\s+/g, '-')
-          : 'item',
-      })
-    );
+    // Retour à l’écran de choix du Checkout (même listing)
+    if (pageData?.listing?.id?.uuid) {
+      history.replace(
+        pathByRouteName('CheckoutPage', routeConfiguration, {
+          id: pageData.listing.id.uuid,
+          slug: pageData.listing.attributes.title
+            ? pageData.listing.attributes.title.toLowerCase().replace(/\s+/g, '-')
+            : 'item',
+        })
+      );
+    } else {
+      history.goBack();
+    }
   };
+
+  // Sécurité : si pas de listing (accès direct) → lien de retour
+  if (!pageData?.listing?.id) {
+    return (
+      <Page title={title} scrollingDisabled={scrollingDisabled}>
+        <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
+        <div className={css.contentContainer}>
+          <div className={css.orderFormContainer} style={{ padding: 24 }}>
+            <H4 as="h1" className={css.heading}>
+              <FormattedMessage id="CheckoutCashPage.missingData" defaultMessage="Données de réservation manquantes" />
+            </H4>
+            <NamedLink name="LandingPage" className="button">
+              <FormattedMessage id="CheckoutCashPage.goHome" defaultMessage="Retour à l’accueil" />
+            </NamedLink>
+          </div>
+        </div>
+      </Page>
+    );
+  }
 
   return (
     <Page title={title} scrollingDisabled={scrollingDisabled}>
@@ -233,21 +267,10 @@ const CheckoutCashPageComponent = props => {
           layoutListingImageConfig={config.layout.listingImage}
           speculateTransactionErrorMessage={null}
           isInquiryProcess={false}
-          processName={PROCESS_KEY}
-          breakdown={
-            existingTx?.id && existingTx?.attributes?.lineItems?.length > 0 ? (
-              <OrderBreakdown
-                className={css.orderBreakdown}
-                userRole="customer"
-                transaction={existingTx}
-                {...(existingTx?.booking?.id && timeZone ? { booking: existingTx.booking, timeZone } : {})}
-                currency={config.currency}
-                marketplaceName={config.marketplaceName}
-              />
-            ) : null
-          }
+          processName={'reloue-booking-cash'}
+          breakdown={breakdown}
           showListingImage={true}
-          intl={useIntl()}
+          intl={intl}
         />
       </div>
     </Page>
@@ -278,7 +301,8 @@ const mapStateToProps = state => {
 };
 
 const mapDispatchToProps = dispatch => ({
-  onInitiateCashOrder: (params, txId) => dispatch(initiateCashOrder(params, txId)),
+  onInitiateOrder: (params, processAlias, txId, transition, isPriv) =>
+    dispatch(initiateOrder(params, processAlias, txId, transition, isPriv)),
   setInitialValues: v => dispatch(setInitialValuesDuck(v)),
 });
 
