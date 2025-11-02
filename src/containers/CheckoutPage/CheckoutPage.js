@@ -39,22 +39,26 @@ import css from './CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
 const DEFAULT_PROCESS_KEY = 'default-booking';
+const CASH_PROCESS_KEY = 'reloue-booking-cash';
 const onSubmitCallback = () => clearData(STORAGE_KEY);
 
-// --------------------------------- URL helpers ---------------------------------
+// Helpers
 const getSearchParams = location => new URLSearchParams(location?.search || '');
-// -------------------------------------------------------------------------------
 
-// Process name fiable (tx existante > choix cash > alias > défaut)
-const getProcessName = pageData => {
+const computeProcessName = (pageData, forceCard) => {
   const { transaction, listing, orderData } = pageData || {};
+
+  // Transaction déjà créée
   const txProc = transaction?.attributes?.processName;
   if (txProc) return resolveLatestProcessName(txProc);
 
-  if (orderData?.paymentMethod === 'cash') {
-    return resolveLatestProcessName('reloue-booking-cash');
-  }
+  // Si on force carte via URL -> toujours default-booking
+  if (forceCard) return resolveLatestProcessName(DEFAULT_PROCESS_KEY);
 
+  // Si choix cash en mémoire -> process cash
+  if (orderData?.paymentMethod === 'cash') return resolveLatestProcessName(CASH_PROCESS_KEY);
+
+  // Sinon alias éventuel de l’annonce, à défaut default-booking
   const alias = listing?.attributes?.publicData?.transactionProcessAlias || null;
   const key = alias ? alias.split('/')[0] : DEFAULT_PROCESS_KEY;
   return resolveLatestProcessName(key);
@@ -63,8 +67,6 @@ const getProcessName = pageData => {
 // ------------------- Bloc CHOIX du mode de paiement -------------------
 const PaymentMethodButtons = ({ pageData, setPageData, history, location, routeParams }) => {
   const listing = pageData?.listing;
-
-  // sources prioritaires : listing hydraté → sinon params route
   const listingId = listing?.id?.uuid || routeParams?.id || '';
   const slug =
     createSlug(listing?.attributes?.title || '') ||
@@ -72,7 +74,7 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location, routeP
     'annonce';
 
   const choose = method => {
-    // 1) persiste le choix + orderData pour garder dates/qty/etc.
+    // Persiste dates/qty + choix
     const updated = {
       ...pageData,
       orderData: { ...(pageData.orderData || {}), paymentMethod: method },
@@ -81,17 +83,13 @@ const PaymentMethodButtons = ({ pageData, setPageData, history, location, routeP
     storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
     if (method === 'card') {
-      // 2a) CARTE : on reste sur la même route checkout en ajoutant ?method=card
-      const nextUrl = listingId && slug
+      const url = listingId && slug
         ? `/l/${slug}/${listingId}/checkout?method=card`
         : `${location.pathname}?method=card`;
-      history.replace(nextUrl);
+      history.replace(url);
       if (typeof window !== 'undefined') window.scrollTo(0, 0);
     } else {
-      // 2b) ESPÈCES : route dédiée cash
-      if (listingId && slug) {
-        history.push(`/l/${slug}/${listingId}/checkout-cash`);
-      }
+      if (listingId && slug) history.push(`/l/${slug}/${listingId}/checkout-cash`);
     }
   };
 
@@ -143,16 +141,19 @@ const EnhancedCheckoutPage = props => {
   const history = useHistory();
   const location = useLocation();
 
+  // Lecture de l'intention depuis l'URL (force carte)
+  const methodFromUrl = getSearchParams(location).get('method');
+  const forceCard = methodFromUrl === 'card';
+
   // Charger données (Redux/session) au montage + normaliser le choix
   useEffect(() => {
     const { orderData, listing, transaction } = props;
     const data = handlePageData({ orderData, listing, transaction }, STORAGE_KEY, history) || {};
 
-    const methodFromUrl = getSearchParams(location).get('method');
+    // Si l'URL force carte, on écrase tout choix précédent
     const normalized =
-      methodFromUrl === 'card' || methodFromUrl === 'cash'
-        ? methodFromUrl
-        : (data.orderData || {}).paymentMethod;
+      forceCard ? 'card'
+      : (data.orderData || {}).paymentMethod || null;
 
     const merged = normalized
       ? { ...data, orderData: { ...(data.orderData || {}), paymentMethod: normalized } }
@@ -173,8 +174,8 @@ const EnhancedCheckoutPage = props => {
     initiateOrderError,
   } = props;
 
-  const processName = getProcessName(pageData); // jamais null
   const listing = pageData?.listing;
+  const processName = computeProcessName(pageData, forceCard); // ici on force bien default-booking si ?method=card
 
   // Garde-fous d’accès
   const isOwnListing =
@@ -219,12 +220,9 @@ const EnhancedCheckoutPage = props => {
   );
   const showListingImage = requireListingImage(foundListingTypeConfig);
 
-  // Décision d'afficher Stripe :
-  const methodFromUrl = getSearchParams(location).get('method');
-  const showStripe =
-    methodFromUrl === 'card' || pageData?.orderData?.paymentMethod === 'card';
+  // Afficher Stripe si : ?method=card OU choix 'card' en mémoire
+  const showStripe = forceCard || pageData?.orderData?.paymentMethod === 'card';
 
-  // Si PAS Stripe → écran de CHOIX
   if (!showStripe) {
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
@@ -244,15 +242,15 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
-  // Sinon : Stripe direct (checkout CARTE)
+  // Checkout CARTE (Stripe)
   return (
     <CheckoutPageWithPayment
       key={pageData?.orderData?.paymentMethod || 'card'}
       config={config}
-      routeConfiguration={useRouteConfiguration()}
+      routeConfiguration={routeConfiguration}
       intl={intl}
       history={history}
-      processName={safeProcessKey}
+      processName={safeProcessKey}           // => "default-booking" si ?method=card
       sessionStorageKey={STORAGE_KEY}
       pageData={pageData}
       setPageData={setPageData}
@@ -298,7 +296,7 @@ const mapDispatchToProps = dispatch => ({
 
 const CheckoutPage = compose(connect(mapStateToProps, mapDispatchToProps))(EnhancedCheckoutPage);
 
-// Toujours écrire en session pour ne plus perdre les dates
+// Conserver les infos en session après pageDataLoadingAPI
 CheckoutPage.setInitialValues = initialValues => {
   const { listing, orderData, transaction = null } = initialValues || {};
   storeData(orderData || {}, listing || null, transaction, STORAGE_KEY);
