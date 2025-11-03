@@ -24,7 +24,7 @@ import MobileOrderBreakdown from '../MobileOrderBreakdown';
 import css from '../CheckoutPage.module.css';
 
 const STORAGE_KEY = 'CheckoutPage';
-const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash';
 const TX_REQUEST = 'transition/request';
 
 // Construit les params d’ordre pour le process cash (mêmes dates/qty/delivery)
