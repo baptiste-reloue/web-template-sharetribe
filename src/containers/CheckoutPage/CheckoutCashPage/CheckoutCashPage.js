@@ -30,11 +30,15 @@ const TX_REQUEST = 'transition/request';
 // Construit les params d’ordre pour le process cash (mêmes dates/qty/delivery)
 const buildOrderParams = (pageData, form) => {
   const { orderData = {}, listing } = pageData || {};
-  const { bookingDates, quantity, deliveryMethod } = orderData;
+  const { bookingDates, quantity, deliveryMethod } = orderData || {};
 
+  // ⚙️ Conversion explicite des dates au format attendu par Flex
   const bookingParams =
     bookingDates && bookingDates.start && bookingDates.end
-      ? { bookingStart: bookingDates.start, bookingEnd: bookingDates.end }
+      ? {
+          bookingStart: new Date(bookingDates.start).toISOString(),
+          bookingEnd: new Date(bookingDates.end).toISOString(),
+        }
       : {};
 
   return {
@@ -42,7 +46,6 @@ const buildOrderParams = (pageData, form) => {
     ...bookingParams,
     ...(quantity ? { stockReservationQuantity: quantity } : {}),
     ...(deliveryMethod ? { deliveryMethod } : {}),
-    // On passe aussi un message initial & des infos de contact côté protectedData
     protectedData: {
       ...(orderData.protectedData || {}),
       paymentMethod: 'cash',
