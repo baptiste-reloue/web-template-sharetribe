@@ -138,7 +138,7 @@ const CheckoutCashPageImpl = props => {
 
     // Speculative pricing
     fetchSpeculatedIfNeeded(data || {}, config, props.fetchSpeculatedTransaction);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   // Sécurité & redirections
