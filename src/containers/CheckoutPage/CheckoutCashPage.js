@@ -27,7 +27,7 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 import css from './CheckoutPage.module.css';
 
 /** ====== CONSTANTES POUR CASH ====== */
-const CASH_PROCESS_ALIAS = 'reloue-booking-cash/release-1';
+const CASH_PROCESS_ALIAS = 'reloue-booking-cash';
 const TX_REQUEST = 'transition/request';
 
 /** ====== CONSTRUCTION DES PARAMS POUR L’INIT ======
