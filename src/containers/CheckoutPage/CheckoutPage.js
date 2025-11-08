@@ -44,6 +44,9 @@ import CustomTopbar from './CustomTopbar';
 import CheckoutPageWithPayment, {
   loadInitialDataForStripePayments,
 } from './CheckoutPageWithPayment';
+import CheckoutCashPage, {
+  loadInitialDataForCashPayments,
+} from './CheckoutCashPage';
 import CheckoutPageWithInquiryProcess from './CheckoutPageWithInquiryProcess';
 
 // Styles
@@ -116,6 +119,20 @@ const EnhancedCheckoutPage = props => {
     }
   }, []); // initial mount only
 
+  // Préchargement de la speculated transaction côté CASH lorsque l’utilisateur choisit cash
+  useEffect(() => {
+    const { currentUser, fetchSpeculatedTransaction } = props;
+    if (!isUserAuthorized(currentUser)) return;
+    if (chosenMethod !== 'cash') return;
+
+    const data = pageData || {};
+    loadInitialDataForCashPayments({
+      pageData: data,
+      fetchSpeculatedTransaction,
+      config,
+    });
+  }, [chosenMethod]);
+
   const {
     currentUser,
     params,
@@ -150,7 +167,6 @@ const EnhancedCheckoutPage = props => {
       isErrorNoPermissionForInitiateTransactions(initiateOrderError));
 
   if (shouldRedirect) {
-    // eslint-disable-next-line no-console
     console.error('Missing or invalid data for checkout, redirecting back to listing page.', {
       listing,
     });
@@ -199,35 +215,33 @@ const EnhancedCheckoutPage = props => {
       }
     };
 
-// ...dans CheckoutPage.js, à l'intérieur du bloc if (!chosenMethod) { ... }
+    const chooseCard = () => {
+      const updated = {
+        ...pageData,
+        orderData: { ...(pageData.orderData || {}), paymentMethod: 'card' },
+      };
+      setPageData(updated);
+      // 💾 on persiste pour la page Stripe
+      storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
-  const chooseCard = () => {
-    const updated = {
-      ...pageData,
-      orderData: { ...(pageData.orderData || {}), paymentMethod: 'card' },
+      const url = new URL(window.location.href);
+      url.searchParams.set('method', 'card');
+      history.push(`${location.pathname}?${url.searchParams.toString()}`);
     };
-    setPageData(updated);
-    // ⚠️ on persiste pour la page Stripe
-    storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
-    const url = new URL(window.location.href);
-    url.searchParams.set('method', 'card');
-    history.push(`${location.pathname}?${url.searchParams.toString()}`);
-  };
+    const chooseCash = () => {
+      const updated = {
+        ...pageData,
+        orderData: { ...(pageData.orderData || {}), paymentMethod: 'cash' },
+      };
+      setPageData(updated);
+      // 💾 on persiste pour CheckoutCashPage
+      storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
 
-  const chooseCash = () => {
-    if (!listing?.id) return;
-
-    const updated = {
-      ...pageData,
-      orderData: { ...(pageData.orderData || {}), paymentMethod: 'cash' },
+      const url = new URL(window.location.href);
+      url.searchParams.set('method', 'cash');
+      history.push(`${location.pathname}?${url.searchParams.toString()}`);
     };
-    setPageData(updated);
-    // ⚠️ on persiste pour CheckoutCashPage
-    storeData(updated.orderData, updated.listing, updated.transaction, STORAGE_KEY);
-
-    history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}/checkout-cash`);
-  };
 
     return (
       <Page title={title} scrollingDisabled={scrollingDisabled}>
@@ -290,6 +304,27 @@ const EnhancedCheckoutPage = props => {
     );
   }
 
+  // Mode ESPÈCES : même squelette que la page carte, sans Stripe
+  if (chosenMethod === 'cash') {
+    return (
+      <CheckoutCashPage
+        config={config}
+        routeConfiguration={routeConfiguration}
+        intl={intl}
+        history={history}
+        processName="reloue-booking-cash" // espèces -> process cash
+        sessionStorageKey={STORAGE_KEY}
+        pageData={pageData}
+        setPageData={setPageData}
+        listingTitle={listingTitle}
+        title={title}
+        onSubmitCallback={onSubmitCallback}
+        showListingImage={showListingImage}
+        {...props}
+      />
+    );
+  }
+
   // Mode CARTE (Stripe) : on garde la page d’origine
   return processName && !speculateTransactionInProgress ? (
     <CheckoutPageWithPayment
@@ -297,7 +332,7 @@ const EnhancedCheckoutPage = props => {
       routeConfiguration={routeConfiguration}
       intl={intl}
       history={history}
-      processName={'default-booking'} // pour ?method=card on force le process carte
+      processName="default-booking" // carte -> process carte
       sessionStorageKey={STORAGE_KEY}
       pageData={pageData}
       setPageData={setPageData}
@@ -343,7 +378,6 @@ const mapStateToProps = state => {
     listing,
     initiateInquiryError,
     initiateOrderError,
-    confirmCardPaymentError,
     confirmPaymentError,
     paymentIntent,
     retrievePaymentIntentError,
