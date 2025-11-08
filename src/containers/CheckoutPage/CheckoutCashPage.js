@@ -7,7 +7,7 @@ import { propTypes } from '../../util/types';
 import { ensureTransaction } from '../../util/data';
 import { createSlug } from '../../util/urlHelpers';
 import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
-import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
+import { getProcess } from '../../transactions/transaction';
 
 // Shared components
 import { H3, H4, NamedLink, OrderBreakdown, Page, Button } from '../../components';
@@ -28,116 +28,65 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// -----------------------------
-// Helpers (reprennent la logique de CheckoutPageWithPayment)
-// -----------------------------
+// ---------- helpers identiques à la page carte ----------
+const cap = s => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+const prefixPriceVariantProperties = pv =>
+  pv ? Object.fromEntries(Object.entries(pv).map(([k, v]) => [`priceVariant${cap(k)}`, v])) : {};
 
-const capitalizeString = s => `${s.charAt(0).toUpperCase()}${s.substr(1)}`;
-
-// Préfixe les propriétés du priceVariant pour les stocker en protectedData
-const prefixPriceVariantProperties = priceVariant => {
-  if (!priceVariant) return {};
-  const entries = Object.entries(priceVariant).map(([key, value]) => {
-    return [`priceVariant${capitalizeString(key)}`, value];
-  });
-  return Object.fromEntries(entries);
-};
-
-/**
- * Construit orderParams (identique à CheckoutPageWithPayment, sans params Stripe)
- */
-const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
+const buildOrderParams = (pageData, config) => {
   const quantity = pageData.orderData?.quantity;
-  const quantityMaybe = quantity ? { quantity } : {};
   const seats = pageData.orderData?.seats;
-  const seatsMaybe = seats ? { seats } : {};
   const deliveryMethod = pageData.orderData?.deliveryMethod;
-  const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
+
   const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
-
   const priceVariantName = pageData.orderData?.priceVariantName;
-  const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
   const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
-  const priceVariantMaybe = priceVariant ? prefixPriceVariantProperties(priceVariant) : {};
 
-  const protectedDataMaybe = {
-    protectedData: {
-      ...getTransactionTypeData(listingType, unitType, config),
-      ...deliveryMethodMaybe,
-      ...shippingDetails,
-      ...priceVariantMaybe,
-      paymentMethod: 'cash', // indicateur côté back
-    },
+  const protectedData = {
+    ...getTransactionTypeData(listingType, unitType, config),
+    ...(deliveryMethod ? { deliveryMethod } : {}),
+    ...prefixPriceVariantProperties(priceVariant),
+    paymentMethod: 'cash', // simple marqueur côté back
   };
 
   return {
     listingId: pageData?.listing?.id,
-    ...deliveryMethodMaybe,
-    ...quantityMaybe,
-    ...seatsMaybe,
+    ...(deliveryMethod ? { deliveryMethod } : {}),
+    ...(quantity ? { quantity } : {}),
+    ...(seats ? { seats } : {}),
     ...bookingDatesMaybe(pageData.orderData?.bookingDates),
-    ...priceVariantNameMaybe,
-    ...protectedDataMaybe,
-    ...optionalPaymentParams, // (vide pour cash)
+    ...(priceVariantName ? { priceVariantName } : {}),
+    protectedData,
+    ...getShippingDetailsMaybe({}),
   };
 };
 
-const fetchSpeculatedTransactionIfNeeded = (orderParams, pageData, fetchSpeculatedTransaction) => {
-  const tx = pageData ? pageData.transaction : null;
-  const pageDataListing = pageData.listing;
+// ---------- préchargement (speculated transaction) ----------
+export const loadInitialDataForCashPayments = ({ pageData, fetchSpeculatedTransaction, config }) => {
+  const tx = pageData?.transaction;
+  const listing = pageData?.listing;
   const processName =
     tx?.attributes?.processName ||
-    pageDataListing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
+    listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
+
   const process = processName ? getProcess(processName) : null;
+  if (!pageData?.listing?.id || !pageData?.orderData || !process) return;
 
-  const shouldFetchSpeculatedTransaction =
-    !!pageData?.listing?.id &&
-    !!pageData.orderData &&
-    !!process &&
-    !hasTransactionPassedPendingPayment(tx, process);
-
-  if (shouldFetchSpeculatedTransaction) {
-    const processAlias = pageData.listing.attributes.publicData?.transactionProcessAlias;
+  if (!hasTransactionPassedPendingPayment(tx, process)) {
+    const orderParams = buildOrderParams(pageData, config);
+    const processAlias = 'reloue-booking-cash';
     const transactionId = tx ? tx.id : null;
-    const isInquiryInPaymentProcess =
-      tx?.attributes?.lastTransition === process.transitions.INQUIRE;
-
+    const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === process.transitions.INQUIRE;
     const requestTransition = isInquiryInPaymentProcess
       ? process.transitions.REQUEST_PAYMENT_AFTER_INQUIRY
       : process.transitions.REQUEST_PAYMENT;
     const isPrivileged = process.isPrivileged(requestTransition);
 
-    fetchSpeculatedTransaction(
-      orderParams,
-      processAlias,
-      transactionId,
-      requestTransition,
-      isPrivileged
-    );
+    fetchSpeculatedTransaction(orderParams, processAlias, transactionId, requestTransition, isPrivileged);
   }
 };
 
-/**
- * Charge les données initiales (version CASH)
- * - Pas d’appel Stripe client
- * - On récupère juste la speculated transaction pour afficher le breakdown
- */
-export const loadInitialDataForCashPayments = ({
-  pageData,
-  fetchSpeculatedTransaction,
-  config,
-}) => {
-  const shippingDetails = {};
-  const optionalPaymentParams = {};
-  const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
-
-  fetchSpeculatedTransactionIfNeeded(orderParams, pageData, fetchSpeculatedTransaction);
-};
-
-// -----------------------------
-// Page component (même structure que CheckoutPageWithPayment)
-// -----------------------------
-
+// ---------- page (même squelette que CheckoutPageWithPayment, sans Stripe) ----------
 const CheckoutCashPage = props => {
   const [submitting, setSubmitting] = useState(false);
 
@@ -145,13 +94,11 @@ const CheckoutCashPage = props => {
     scrollingDisabled,
     speculateTransactionError,
     speculatedTransaction: speculatedTransactionMaybe,
-    isClockInSync, // utile pour l’état de paiement pending (qu’on n’utilise pas ici mais garde la signature)
     initiateOrderError,
     intl,
-    currentUser,
     showListingImage,
     pageData,
-    processName,
+    processName,          // transmis par CheckoutPage: "reloue-booking-cash"
     listingTitle,
     title,
     config,
@@ -161,22 +108,22 @@ const CheckoutCashPage = props => {
     onSubmitCallback,
   } = props;
 
+  // process & alias cash (on force l’alias cash)
+  const process = processName ? getProcess(processName) : null;
+  const processAlias = 'reloue-booking-cash/release-1';
+
   const listingNotFound =
     isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
     isTransactionInitiateListingNotFoundError(initiateOrderError);
 
-  const { listing, transaction, orderData } = pageData;
-  const existingTransaction = ensureTransaction(transaction);
-  const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
+  const { listing, transaction } = pageData || {};
+  const existingTx = ensureTransaction(transaction);
+  const speculatedTx = ensureTransaction(speculatedTransactionMaybe, {}, null);
 
-  const tx =
-    existingTransaction?.attributes?.lineItems?.length > 0
-      ? existingTransaction
-      : speculatedTransaction;
+  const tx = existingTx?.attributes?.lineItems?.length > 0 ? existingTx : speculatedTx;
 
   const timeZone = listing?.attributes?.availabilityPlan?.timezone;
-  const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
-  const priceVariantName = tx.attributes.protectedData?.priceVariantName;
+  const priceVariantName = tx.attributes?.protectedData?.priceVariantName;
   const txBookingMaybe = tx?.booking?.id ? { booking: tx.booking, timeZone } : {};
 
   const breakdown =
@@ -191,71 +138,50 @@ const CheckoutCashPage = props => {
       />
     ) : null;
 
-  const totalPrice =
-    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
-
-  const process = processName ? getProcess(processName) : null;
+  const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
   const transitions = process?.transitions || {};
-
-  const firstImage = listing?.images?.length > 0 ? listing.images[0] : null;
+  const firstImage = listing?.images?.[0] || null;
 
   const listingLink = (
-    <NamedLink
-      name="ListingPage"
-      params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}
-    >
+    <NamedLink name="ListingPage" params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}>
       <FormattedMessage id="CheckoutPage.errorlistingLinkText" />
     </NamedLink>
   );
 
-  // On réutilise le même helper d’erreurs (certains messages seront simplement absents)
   const errorMessages = getErrorMessages(
     listingNotFound,
     initiateOrderError,
-    false,               // isPaymentExpired (pas pertinent pour cash)
-    null,                // retrievePaymentIntentError
+    false, // expired (non concerné en cash)
+    null,  // retrievePaymentIntentError (n’existe pas ici)
     speculateTransactionError,
     listingLink
   );
 
-  const showInitialMessageInput = true; // pas d'INQUIRE imposé ici
-
-  const askShippingDetails = orderData?.deliveryMethod === 'shipping';
-
   const handleCashSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
-
     try {
-      const shippingDetails = getShippingDetailsMaybe({}); // pas de formulaire ici
-      const optionalPaymentParams = {}; // rien côté Stripe
-      const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
+      const orderParams = buildOrderParams(pageData, config);
 
-      // Même logique que la page paiement carte pour déterminer la transition
-      const isInquiryInPaymentProcess =
-        existingTransaction?.attributes?.lastTransition === transitions.INQUIRE;
-      const requestTransition = isInquiryInPaymentProcess
+      // même logique de transition que la page carte
+      const isInquiry = existingTx?.attributes?.lastTransition === transitions.INQUIRE;
+      const requestTransition = isInquiry
         ? transitions.REQUEST_PAYMENT_AFTER_INQUIRY
         : transitions.REQUEST_PAYMENT;
       const isPrivileged = process && requestTransition ? process.isPrivileged(requestTransition) : false;
 
-      const transactionId = existingTransaction?.id || null;
+      const transactionId = existingTx?.id || null;
 
-      const response = await onInitiateOrder(
+      const res = await onInitiateOrder(
         orderParams,
-        transactionProcessAlias,
+        processAlias,      // <— on force le process CASH
         transactionId,
         requestTransition,
         isPrivileged
       );
 
       const orderId =
-        response?.orderId ||
-        response?.data?.id ||
-        response?.data?.id?.uuid ||
-        response?.id ||
-        response?.uuid ||
-        null;
+        res?.orderId || res?.data?.id || res?.data?.id?.uuid || res?.id || res?.uuid || null;
 
       if (orderId) {
         const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, {
@@ -264,13 +190,11 @@ const CheckoutCashPage = props => {
         onSubmitCallback && onSubmitCallback();
         history.push(orderDetailsPath);
       } else {
-        // fallback : retour à la fiche
         onSubmitCallback && onSubmitCallback();
         history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
       }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('CheckoutCashPage submit error', err);
+    } catch (e) {
+      console.error('CheckoutCashPage error', e);
       setSubmitting(false);
     }
   };
@@ -289,9 +213,7 @@ const CheckoutCashPage = props => {
 
         <div className={css.orderFormContainer}>
           <div className={css.headingContainer}>
-            <H3 as="h1" className={css.heading}>
-              {title}
-            </H3>
+            <H3 as="h1" className={css.heading}>{title}</H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
               <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
@@ -304,19 +226,16 @@ const CheckoutCashPage = props => {
           />
 
           <section className={css.paymentContainer}>
-            {/* Erreurs éventuelles */}
             {errorMessages.initiateOrderErrorMessage}
             {errorMessages.listingNotFoundErrorMessage}
             {errorMessages.speculateErrorMessage}
 
-            {/* Bloc "paiement en espèces" */}
+            {/* Bloc cash minimaliste (à la place du StripePaymentForm) */}
             <div className={css.cashBox}>
               <p><FormattedMessage id="CheckoutPage.payInCash.instruction" /></p>
               {totalPrice ? (
                 <p className={css.totalPrice}>
-                  <strong>
-                    <FormattedMessage id="CheckoutPage.totalPrice" values={{ totalPrice }} />
-                  </strong>
+                  <strong><FormattedMessage id="CheckoutPage.totalPrice" values={{ totalPrice }} /></strong>
                 </p>
               ) : null}
 
@@ -327,11 +246,9 @@ const CheckoutCashPage = props => {
                   disabled={submitting}
                   type="button"
                 >
-                  {submitting ? (
-                    <FormattedMessage id="CheckoutPage.confirming" />
-                  ) : (
-                    <FormattedMessage id="CheckoutPage.payInCash.confirmButton" />
-                  )}
+                  {submitting
+                    ? <FormattedMessage id="CheckoutPage.confirming" />
+                    : <FormattedMessage id="CheckoutPage.payInCash.confirmButton" />}
                 </Button>
               </div>
             </div>
@@ -362,13 +279,11 @@ CheckoutCashPage.propTypes = {
   scrollingDisabled: propTypes.bool,
   speculateTransactionError: propTypes.string,
   speculatedTransaction: propTypes.transaction,
-  isClockInSync: propTypes.bool,
   initiateOrderError: propTypes.string,
   intl: propTypes.intl.isRequired,
-  currentUser: propTypes.currentUser,
   showListingImage: propTypes.bool,
   pageData: propTypes.object.isRequired,
-  processName: propTypes.string,
+  processName: propTypes.string, // "reloue-booking-cash"
   listingTitle: propTypes.string,
   title: propTypes.string,
   config: propTypes.object.isRequired,
