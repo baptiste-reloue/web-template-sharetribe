@@ -1,18 +1,14 @@
-// src/containers/CheckoutPage/CheckoutCashPage.js
 import React, { useState } from 'react';
-import { useHistory } from 'react-router-dom';
 import { FormattedMessage } from '../../util/reactIntl';
 import { pathByRouteName } from '../../util/routes';
 import { createSlug } from '../../util/urlHelpers';
-import { getProcess } from '../../transactions/transaction';
 import { ensureTransaction } from '../../util/data';
-import { H3, H4, Page, Button, NamedLink } from '../../components';
+import { H3, H4, Page, Button, NamedLink, OrderBreakdown } from '../../components';
 
 import CustomTopbar from './CustomTopbar';
 import DetailsSideCard from './DetailsSideCard';
 import MobileListingImage from './MobileListingImage';
 import MobileOrderBreakdown from './MobileOrderBreakdown';
-import OrderBreakdown from '../../components/OrderBreakdown/OrderBreakdown';
 
 import {
   bookingDatesMaybe,
@@ -23,81 +19,64 @@ import {
 
 import css from './CheckoutPage.module.css';
 
-/**
- * Helper pour construire les orderParams (similaire à CheckoutPageWithPayment)
- */
-const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
+const prefixPriceVariantProperties = priceVariant => {
+  if (!priceVariant) return {};
+  const cap = s => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+  return Object.fromEntries(Object.entries(priceVariant).map(([k, v]) => [`priceVariant${cap(k)}`, v]));
+};
+
+const buildOrderParams = (pageData, config) => {
   const quantity = pageData.orderData?.quantity;
-  const quantityMaybe = quantity ? { quantity } : {};
   const seats = pageData.orderData?.seats;
-  const seatsMaybe = seats ? { seats } : {};
   const deliveryMethod = pageData.orderData?.deliveryMethod;
-  const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
+
   const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
-
   const priceVariantName = pageData.orderData?.priceVariantName;
-  const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
   const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
-  const priceVariantMaybe = priceVariant
-    ? Object.fromEntries(
-        Object.entries(priceVariant).map(([key, value]) => [`priceVariant${key.charAt(0).toUpperCase()}${key.slice(1)}`, value])
-      )
-    : {};
 
-  const protectedDataMaybe = {
-    protectedData: {
-      ...getTransactionTypeData(listingType, unitType, config),
-      ...deliveryMethodMaybe,
-      ...shippingDetails,
-      ...priceVariantMaybe,
-    },
+  const shippingDetails = getShippingDetailsMaybe({});
+  const protectedData = {
+    ...getTransactionTypeData(listingType, unitType, config),
+    ...(deliveryMethod ? { deliveryMethod } : {}),
+    ...prefixPriceVariantProperties(priceVariant),
+    // ⚠️ Rien lié à Stripe ici
+    paymentMethod: 'cash',
   };
 
   return {
     listingId: pageData?.listing?.id,
-    ...deliveryMethodMaybe,
-    ...quantityMaybe,
-    ...seatsMaybe,
+    ...(deliveryMethod ? { deliveryMethod } : {}),
+    ...(quantity ? { quantity } : {}),
+    ...(seats ? { seats } : {}),
     ...bookingDatesMaybe(pageData.orderData?.bookingDates),
-    ...priceVariantNameMaybe,
-    ...protectedDataMaybe,
-    ...optionalPaymentParams,
+    ...(priceVariantName ? { priceVariantName } : {}),
+    protectedData,
+    ...shippingDetails,
   };
 };
 
 const CheckoutCashPage = props => {
   const {
-    pageData,
     config,
     intl,
-    history: historyProp,
+    history,
+    routeConfiguration,
+    pageData,
     onInitiateOrder,
     onSubmitCallback,
     speculateTransactionInProgress,
     showListingImage,
   } = props;
 
-  const history = useHistory() || historyProp;
   const [submitting, setSubmitting] = useState(false);
 
   const { listing, transaction } = pageData || {};
   const tx = ensureTransaction(transaction);
   const listingTitle = listing?.attributes?.title;
-
-  const title = intl.formatMessage(
-    { id: 'CheckoutPage.reloue-booking-cash.title' },
-    {
-      listingTitle,
-      authorDisplayName: listing?.author?.attributes?.profile?.displayName || '',
-    }
-  );
-
-  const processName = 'reloue-booking-cash';
-  const process = getProcess(processName);
-  const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
+  const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
   const breakdown =
-    tx?.id && tx.attributes.lineItems?.length > 0 ? (
+    tx?.id && tx.attributes?.lineItems?.length > 0 ? (
       <OrderBreakdown
         className={css.orderBreakdown}
         userRole="customer"
@@ -107,60 +86,55 @@ const CheckoutCashPage = props => {
       />
     ) : null;
 
-  const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
+  const title = intl.formatMessage(
+    { id: 'CheckoutPage.reloue-booking-cash.title' },
+    {
+      listingTitle,
+      authorDisplayName: listing?.author?.attributes?.profile?.displayName || '',
+    }
+  );
 
-  // Déterminer la transition à utiliser (comme CheckoutPageWithPayment)
-  const transitions = process?.transitions || {};
-  const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === transitions.INQUIRE;
-  const requestTransition = isInquiryInPaymentProcess
-    ? transitions.REQUEST_PAYMENT_AFTER_INQUIRY
-    : transitions.REQUEST_PAYMENT;
-  const isPrivileged = process && requestTransition ? process.isPrivileged(requestTransition) : false;
+  const goToOrderDetails = orderId => {
+    const idUuid = orderId?.uuid ? orderId.uuid : orderId;
+    const orderDetailsPath = pathByRouteName('OrderDetailsPage', routeConfiguration, { id: idUuid });
+    onSubmitCallback && onSubmitCallback();
+    history.push(orderDetailsPath);
+  };
 
-  const handleCashSubmit = async () => {
+  const handleConfirmCash = async () => {
     if (submitting) return;
     setSubmitting(true);
-
     try {
-      const shippingDetails = getShippingDetailsMaybe({});
-      const optionalPaymentParams = {}; // Pas de Stripe
-      const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
+      const orderParams = buildOrderParams(pageData, config);
 
-      const processAlias = transactionProcessAlias;
+      // On garde l'alias de process publié sur l’annonce
+      const processAlias = listing?.attributes?.publicData?.transactionProcessAlias || 'reloue-booking-cash/release-1';
       const transactionId = tx?.id || null;
 
-      const response = await onInitiateOrder(
-        orderParams,
-        processAlias,
-        transactionId,
-        requestTransition,
-        isPrivileged
-      );
+      // On passe un nom de transition "request-payment" utilisé partout par défaut
+      // (le process cash doit mimer cette transition côté Serve)
+      const transitionName = 'transition/request-payment';
+      const isPrivileged = false;
 
-      // Extraction flexible de l’orderId
+      const res = await onInitiateOrder(orderParams, processAlias, transactionId, transitionName, isPrivileged);
+
       const orderId =
-        response?.orderId ||
-        response?.data?.id ||
-        response?.data?.id?.uuid ||
-        response?.id ||
-        response?.uuid ||
+        res?.orderId ||
+        res?.data?.id ||
+        res?.data?.id?.uuid ||
+        res?.id ||
+        res?.uuid ||
         null;
 
       if (orderId) {
-        const idUuid = orderId.uuid ? orderId.uuid : orderId;
-        const orderDetailsPath = pathByRouteName('OrderDetailsPage', config.routeConfiguration || {}, {
-          id: idUuid,
-        });
-        onSubmitCallback && onSubmitCallback();
-        history.push(orderDetailsPath);
+        goToOrderDetails(orderId);
       } else {
+        // fallback: retour à la fiche
         onSubmitCallback && onSubmitCallback();
         history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
       }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('CheckoutCashPage: error initiating cash order', err);
-    } finally {
+    } catch (e) {
+      console.error('Cash checkout error', e);
       setSubmitting(false);
     }
   };
@@ -172,51 +146,41 @@ const CheckoutCashPage = props => {
         <MobileListingImage
           listingTitle={listingTitle}
           author={listing?.author}
-          firstImage={listing?.images?.length > 0 ? listing.images[0] : null}
+          firstImage={listing?.images?.[0] || null}
           layoutListingImageConfig={config.layout.listingImage}
           showListingImage={showListingImage}
         />
 
         <div className={css.orderFormContainer}>
           <div className={css.headingContainer}>
-            <H3 as="h1" className={css.heading}>
-              {title}
-            </H3>
+            <H3 as="h1" className={css.heading}>{title}</H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
               <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
           </div>
 
-          <MobileOrderBreakdown
-            breakdown={breakdown}
-            priceVariantName={tx?.attributes?.protectedData?.priceVariantName}
-          />
+          <MobileOrderBreakdown breakdown={breakdown} />
 
           <section className={css.paymentContainer}>
             <div className={css.cashNotice}>
-              <p>
-                <FormattedMessage id="CheckoutPage.payInCash.instruction" />
-              </p>
-              <p className={css.totalPrice}>
-                {totalPrice ? (
-                  <strong>
-                    <FormattedMessage id="CheckoutPage.totalPrice" values={{ totalPrice }} />
-                  </strong>
-                ) : null}
-              </p>
+              <p><FormattedMessage id="CheckoutPage.payInCash.instruction" /></p>
+              {totalPrice ? (
+                <p className={css.totalPrice}>
+                  <strong><FormattedMessage id="CheckoutPage.totalPrice" values={{ totalPrice }} /></strong>
+                </p>
+              ) : null}
             </div>
 
             <div className={css.confirmRow}>
               <Button
                 className={css.primaryButton}
-                onClick={handleCashSubmit}
+                onClick={handleConfirmCash}
                 disabled={submitting || speculateTransactionInProgress}
+                type="button"
               >
-                {submitting ? (
-                  <FormattedMessage id="CheckoutPage.confirming" />
-                ) : (
-                  <FormattedMessage id="CheckoutPage.payInCash.confirmButton" />
-                )}
+                {submitting
+                  ? <FormattedMessage id="CheckoutPage.confirming" />
+                  : <FormattedMessage id="CheckoutPage.payInCash.confirmButton" />}
               </Button>
             </div>
 
@@ -232,7 +196,7 @@ const CheckoutCashPage = props => {
           listing={listing}
           listingTitle={listingTitle}
           author={listing?.author}
-          firstImage={listing?.images?.length > 0 ? listing.images[0] : null}
+          firstImage={listing?.images?.[0] || null}
           layoutListingImageConfig={config.layout.listingImage}
           breakdown={breakdown}
           showListingImage={showListingImage}
