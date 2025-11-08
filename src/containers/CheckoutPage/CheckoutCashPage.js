@@ -1,4 +1,3 @@
-// src/containers/CheckoutPage/CheckoutCashPage.js
 import React, { useState } from 'react';
 
 // Contexts & utils
