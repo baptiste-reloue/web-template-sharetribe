@@ -1,312 +1,182 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { compose } from 'redux';
-import { connect } from 'react-redux';
-import { useHistory, useLocation } from 'react-router-dom';
-import { useIntl } from '../../util/reactIntl';
+import React, { useState } from 'react';
+import { useHistory } from 'react-router-dom';
+import { FormattedMessage } from '../../util/reactIntl';
+import { pathByRouteName } from '../../util/routes';
+import { createSlug } from '../../util/urlHelpers';
+import { getProcess } from '../../transactions/transaction';
+import { ensureTransaction } from '../../util/data';
+import { H3, H4, Page, Button, NamedLink } from '../../components';
 
-// Contexts & utils
-import { useConfiguration } from '../../context/configurationContext';
-import { useRouteConfiguration } from '../../context/routeConfigurationContext';
-import { userDisplayNameAsString, ensureTransaction } from '../../util/data';
-import {
-  NO_ACCESS_PAGE_INITIATE_TRANSACTIONS,
-  NO_ACCESS_PAGE_USER_PENDING_APPROVAL,
-  createSlug,
-} from '../../util/urlHelpers';
-import { hasPermissionToInitiateTransactions, isUserAuthorized } from '../../util/userHelpers';
-import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
-import { getProcess, INQUIRY_PROCESS_NAME, resolveLatestProcessName } from '../../transactions/transaction';
-import { requireListingImage } from '../../util/configHelpers';
+import CustomTopbar from '../CheckoutPage/CustomTopbar';
+import DetailsSideCard from '../CheckoutPage/DetailsSideCard';
+import MobileListingImage from '../CheckoutPage/MobileListingImage';
+import MobileOrderBreakdown from '../CheckoutPage/MobileOrderBreakdown';
+import OrderBreakdown from '../../components/OrderBreakdown/OrderBreakdown';
 
-// Ducks
-import { isScrollingDisabled } from '../../ducks/ui.duck';
-
-// Components
-import { Page, H3, H4, Button, NamedRedirect, NamedLink, OrderBreakdown } from '../../components';
-
-// Helpers (session + checkout)
-import { storeData, handlePageData, clearData } from './CheckoutPageSessionHelpers';
 import {
   bookingDatesMaybe,
+  getBillingDetails,
   getFormattedTotalPrice,
+  getShippingDetailsMaybe,
   getTransactionTypeData,
-  setOrderPageInitialValues,
-} from './CheckoutPageTransactionHelpers.js';
-import { getErrorMessages } from './ErrorMessages';
+} from '../CheckoutPage/CheckoutPageTransactionHelpers.js';
 
-// Ducks locaux (pas de Stripe ici)
-import {
-  setInitialValues,
-  speculateTransaction,
-  initiateOrder,
-  sendMessage,
-} from './CheckoutPage.duck';
+import css from '../CheckoutPage/CheckoutPage.module.css';
 
-// Visuels
-import CustomTopbar from './CustomTopbar';
-import DetailsSideCard from './DetailsSideCard';
-import MobileListingImage from './MobileListingImage';
-import MobileOrderBreakdown from './MobileOrderBreakdown';
-import css from './CheckoutPage.module.css';
+/**
+ * Construire orderParams (version minimale reprise du code de CheckoutPageWithPayment)
+ */
+const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
+  const quantity = pageData.orderData?.quantity;
+  const quantityMaybe = quantity ? { quantity } : {};
+  const seats = pageData.orderData?.seats;
+  const seatsMaybe = seats ? { seats } : {};
+  const deliveryMethod = pageData.orderData?.deliveryMethod;
+  const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
+  const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
 
-const STORAGE_KEY = 'CheckoutPage';
+  const priceVariantName = pageData.orderData?.priceVariantName;
+  const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
+  const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
+  const priceVariantMaybe = priceVariant
+    ? Object.fromEntries(
+        Object.entries(priceVariant).map(([key, value]) => [`priceVariant${key.charAt(0).toUpperCase()}${key.slice(1)}`, value])
+      )
+    : {};
 
-const onSubmitCallback = () => clearData(STORAGE_KEY);
-
-// Construit les params pour l’initiation (sans Stripe)
-const buildOrderParams = (pageData, config) => {
-  const { listing } = pageData;
-  const { listingType, unitType } = listing?.attributes?.publicData || {};
-
-  // infos protégées utiles au process (comme pour la page Stripe)
   const protectedDataMaybe = {
     protectedData: {
       ...getTransactionTypeData(listingType, unitType, config),
+      ...deliveryMethodMaybe,
+      ...shippingDetails,
+      ...priceVariantMaybe,
     },
   };
 
-  const quantity = pageData.orderData?.quantity;
-  const seats = pageData.orderData?.seats;
-  const quantityMaybe = quantity ? { quantity } : {};
-  const seatsMaybe = seats ? { seats } : {};
-
-  return {
-    listingId: listing?.id,
+  const orderParams = {
+    listingId: pageData?.listing?.id,
+    ...deliveryMethodMaybe,
     ...quantityMaybe,
     ...seatsMaybe,
     ...bookingDatesMaybe(pageData.orderData?.bookingDates),
+    ...priceVariantNameMaybe,
     ...protectedDataMaybe,
+    ...optionalPaymentParams,
   };
+
+  return orderParams;
 };
 
-// Déduit le process de base à partir de listing/transaction
-const baseProcessName = pageData => {
-  const { transaction, listing } = pageData || {};
-  const processName = transaction?.id
-    ? transaction?.attributes?.processName
-    : listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
-  return resolveLatestProcessName(processName);
-};
+const CheckoutCashPage = props => {
+  const {
+    pageData,
+    config,
+    intl,
+    history: historyProp,
+    onInitiateOrder,
+    onSubmitCallback,
+    speculateTransactionInProgress,
+    showListingImage,
+  } = props;
 
-// Spéculation (sans Stripe) pour afficher la tarification
-const fetchSpeculatedIfNeeded = (pageData, config, fetchSpeculatedTransaction) => {
-  const tx = pageData?.transaction || null;
-  const processName =
-    tx?.attributes?.processName ||
-    pageData?.listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
-  const process = processName ? getProcess(processName) : null;
+  const history = useHistory() || historyProp;
+  const [submitting, setSubmitting] = useState(false);
 
-  if (!pageData?.listing?.id || !pageData?.orderData || !process) return;
-
-  // Transition de demande SANS paiement
-  const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === process.transitions.INQUIRE;
-  // Par convention de Sharetribe, ces deux clés existent sur un process de booking sans Stripe :
-  // REQUEST et REQUEST_AFTER_INQUIRY
-  const requestTransition = isInquiryInPaymentProcess
-    ? (process.transitions.REQUEST_AFTER_INQUIRY || process.transitions.REQUEST)
-    : process.transitions.REQUEST;
-
-  const isPrivileged = process.isPrivileged(requestTransition);
-  const processAlias = pageData.listing.attributes.publicData?.transactionProcessAlias;
-  const transactionId = tx ? tx.id : null;
-
-  const orderParams = buildOrderParams(pageData, config);
-
-  fetchSpeculatedTransaction(orderParams, processAlias, transactionId, requestTransition, isPrivileged);
-};
-
-const CheckoutCashPageImpl = props => {
-  const intl = useIntl();
-  const history = useHistory();
-  const location = useLocation();
-  const config = useConfiguration();
-  const routeConfiguration = useRouteConfiguration();
-
-  const [pageData, setPageData] = useState({});
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  // Récup data (ListingPage → session)
-  useEffect(() => {
-    const initial = {
-      orderData: props.orderData,
-      listing: props.listing,
-      transaction: props.transaction,
-    };
-    const data = handlePageData(initial, STORAGE_KEY, history);
-    setPageData(data || {});
-    setIsDataLoaded(true);
-
-    // Speculative pricing
-    fetchSpeculatedIfNeeded(data || {}, config, props.fetchSpeculatedTransaction);
-
-  }, []);
-
-  // Sécurité & redirections
-  const { currentUser, scrollingDisabled, speculateTransactionError, initiateOrderError } = props;
-
-  const listing = pageData?.listing;
-  const isOwnListing =
-    currentUser?.id && listing?.author?.id?.uuid === currentUser?.id?.uuid;
-
-  const discoveredProcess = baseProcessName(pageData);
-  const processName = 'reloue-booking-cash'; // forcé sur cette page
-  const hasRequiredData = !!(listing?.id && listing?.author?.id && processName);
-
-  const shouldRedirect = isDataLoaded && !(hasRequiredData && !isOwnListing);
-  const shouldRedirectUnathorizedUser = isDataLoaded && !isUserAuthorized(currentUser);
-  const shouldRedirectNoTransactionRightsUser =
-    isDataLoaded &&
-    (!hasPermissionToInitiateTransactions(currentUser) ||
-      !!initiateOrderError);
-
-  if (shouldRedirect) {
-    return <NamedRedirect name="ListingPage" params={props.params} />;
-  } else if (shouldRedirectUnathorizedUser) {
-    return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_USER_PENDING_APPROVAL }}
-      />
-    );
-  } else if (shouldRedirectNoTransactionRightsUser) {
-    return (
-      <NamedRedirect
-        name="NoAccessPage"
-        params={{ missingAccessRight: NO_ACCESS_PAGE_INITIATE_TRANSACTIONS }}
-      />
-    );
-  }
-
-  // Titre et infos
+  const { listing, transaction } = pageData || {};
+  const existingTransaction = ensureTransaction(transaction);
+  const tx = existingTransaction;
   const listingTitle = listing?.attributes?.title;
-  const authorDisplayName = userDisplayNameAsString(listing?.author, '');
   const title = intl.formatMessage(
-    { id: `CheckoutPage.${processName}.title` },
-    { listingTitle, authorDisplayName }
+    { id: 'CheckoutPage.reloue-booking-cash.title' },
+    { listingTitle, authorDisplayName: listing?.author?.attributes?.profile?.displayName || '' }
   );
 
-  // Image & breakdown
-  const validListingTypes = config.listing.listingTypes;
-  const foundListingTypeConfig = validListingTypes.find(
-    conf => conf.listingType === listing?.attributes?.publicData?.listingType
-  );
-  const showListingImage = requireListingImage(foundListingTypeConfig);
+  const processName = 'reloue-booking-cash';
+  const process = getProcess(processName);
+  const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
 
-  const existingTransaction = ensureTransaction(props.transaction);
-  const speculatedTransaction = ensureTransaction(props.speculatedTransaction, {}, null);
-  const tx =
-    existingTransaction?.attributes?.lineItems?.length > 0
-      ? existingTransaction
-      : speculatedTransaction;
-
-  const timeZone = listing?.attributes?.availabilityPlan?.timezone;
-  const txBookingMaybe = tx?.booking?.id ? { booking: tx.booking, timeZone } : {};
-
+  // Build breakdown using existing or speculated transaction (if any)
   const breakdown =
-    tx?.id && tx?.attributes?.lineItems?.length > 0 ? (
+    tx?.id && tx.attributes.lineItems?.length > 0 ? (
       <OrderBreakdown
         className={css.orderBreakdown}
         userRole="customer"
         transaction={tx}
-        {...txBookingMaybe}
         currency={config.currency}
         marketplaceName={config.marketplaceName}
       />
     ) : null;
 
-  const totalPrice =
-    tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
+  const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
-  const firstImage = listing?.images?.length > 0 ? listing.images[0] : null;
+  // Determine correct transition to call for initiation (mirrors CheckoutPageWithPayment logic)
+  const transitions = process?.transitions || {};
+  const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === transitions.INQUIRE;
+  const requestTransition = isInquiryInPaymentProcess
+    ? transitions.REQUEST_PAYMENT_AFTER_INQUIRY
+    : transitions.REQUEST_PAYMENT;
+  const isPrivileged = process && requestTransition ? process.isPrivileged(requestTransition) : false;
 
-  // Erreurs génériques pour le header
-  const listingNotFound =
-    isTransactionInitiateListingNotFoundError(speculateTransactionError) ||
-    isTransactionInitiateListingNotFoundError(initiateOrderError);
+  const handleCashSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
 
-  const listingLink = (
-    <NamedLink
-      name="ListingPage"
-      params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}
-    >
-      {intl.formatMessage({ id: 'CheckoutPage.errorlistingLinkText' })}
-    </NamedLink>
-  );
+    try {
+      const shippingDetails = getShippingDetailsMaybe({}); // no shipping by default, but keep helper
+      const optionalPaymentParams = {}; // no stripe params for cash
+      const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
 
-  const errorMessages = getErrorMessages(
-    listingNotFound,
-    initiateOrderError,
-    false, // isPaymentExpired (pas de Stripe ici)
-    null, // retrievePaymentIntentError
-    speculateTransactionError,
-    listingLink
-  );
+      // onInitiateOrder signature: (params, processAlias, transactionId, transitionName, isPrivileged)
+      const processAlias = transactionProcessAlias;
+      const transactionId = tx?.id || null;
 
-  // Formulaire minimal (message optionnel)
-  const [message, setMessage] = useState('');
+      const response = await onInitiateOrder(
+        orderParams,
+        processAlias,
+        transactionId,
+        requestTransition,
+        isPrivileged
+      );
 
-  const onSubmit = () => {
-    const process = getProcess(processName);
+      // Try to obtain an orderId to navigate to OrderDetailsPage like in other flows.
+      // The duck might return the created order id in different shapes; attempt common ones.
+      const orderId =
+        (response && response.orderId) ||
+        (response && response.data && response.data.id) ||
+        (response && response.data && response.data.id && response.data.id.uuid) ||
+        (response && response.id) ||
+        (response && response.uuid) ||
+        null;
 
-    const tx = pageData?.transaction || null;
-    const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === process.transitions.INQUIRE;
-    const requestTransition = isInquiryInPaymentProcess
-      ? (process.transitions.REQUEST_AFTER_INQUIRY || process.transitions.REQUEST)
-      : process.transitions.REQUEST;
-    const isPrivileged = process.isPrivileged(requestTransition);
-
-    const orderParams = buildOrderParams(pageData, config);
-    const processAlias = 'reloue-booking-cash/release-1';
-    const transactionId = tx ? tx.id : null;
-
-    props
-      .onInitiateOrder(orderParams, processAlias, transactionId, requestTransition, isPrivileged)
-      .then(order => {
-        const orderId = order.id;
-        // message initial
-        return props
-          .onSendMessage({ id: orderId, message })
-          .then(({ messageSuccess }) => {
-            const initialValues = {
-              initialMessageFailedToTransaction: messageSuccess ? null : orderId,
-            };
-            setOrderPageInitialValues(initialValues, routeConfiguration, props.dispatch);
-            onSubmitCallback();
-
-            const detailsPath = {
-              name: 'OrderDetailsPage',
-              params: { id: orderId.uuid },
-            };
-            const path = props.history && props.history.push
-              ? null
-              : null;
-
-            const orderDetailsPath = `/order/${orderId.uuid}`;
-            props.history.push(orderDetailsPath);
-          });
-      })
-      .catch(e => {
-        // eslint-disable-next-line no-console
-        console.error('initiate cash order failed', e);
-      });
-  };
-
-  const goBackToListing = () => {
-    if (listing?.id) {
-      history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
-    } else {
-      history.goBack();
+      // If we can build a route to the OrderDetailsPage
+      if (orderId) {
+        // If orderId is an object with uuid
+        const idUuid = orderId.uuid ? orderId.uuid : orderId;
+        const orderDetailsPath = pathByRouteName('OrderDetailsPage', config.routeConfiguration || {}, {
+          id: idUuid,
+        });
+        onSubmitCallback && onSubmitCallback();
+        history.push(orderDetailsPath);
+      } else {
+        // Fallback: redirect to listing or show a simple confirmation page
+        onSubmitCallback && onSubmitCallback();
+        history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
+      }
+    } catch (err) {
+      console.error('CheckoutCashPage: error initiating cash order', err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <Page title={title} scrollingDisabled={scrollingDisabled}>
+    <Page title={title} scrollingDisabled={false}>
       <CustomTopbar intl={intl} linkToExternalSite={config?.topbar?.logoLink} />
       <div className={css.contentContainer}>
         <MobileListingImage
           listingTitle={listingTitle}
           author={listing?.author}
-          firstImage={firstImage}
+          firstImage={listing?.images?.length > 0 ? listing.images[0] : null}
           layoutListingImageConfig={config.layout.listingImage}
           showListingImage={showListingImage}
         />
@@ -317,45 +187,44 @@ const CheckoutCashPageImpl = props => {
               {title}
             </H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
-              {intl.formatMessage({ id: 'CheckoutPage.listingTitle' }, { listingTitle })}
+              <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
           </div>
 
-          <MobileOrderBreakdown
-            speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
-            breakdown={breakdown}
-            // pas de priceVariant spécifique ici, on laisse vide
-          />
+          <MobileOrderBreakdown breakdown={breakdown} priceVariantName={tx?.attributes?.protectedData?.priceVariantName} />
 
           <section className={css.paymentContainer}>
-            {/* Messages d’erreur génériques */}
-            {errorMessages.initiateOrderErrorMessage}
-            {errorMessages.listingNotFoundErrorMessage}
-            {errorMessages.speculateErrorMessage}
+            <div className={css.cashNotice}>
+              <p>
+                <FormattedMessage id="CheckoutPage.payInCash.instruction" />
+              </p>
+              <p className={css.totalPrice}>
+                {totalPrice ? (
+                  <strong>
+                    <FormattedMessage id="CheckoutPage.totalPrice" values={{ totalPrice }} />
+                  </strong>
+                ) : null}
+              </p>
+            </div>
 
-            {/* Formulaire simple */}
-            <div className={css.paymentForm}>
-              <label className={css.label} htmlFor="messageToProvider">
-                {intl.formatMessage({ id: 'CheckoutPage.initialMessageLabel' })}
-              </label>
-              <textarea
-                id="messageToProvider"
-                className={css.textarea}
-                placeholder={intl.formatMessage({ id: 'CheckoutPage.initialMessagePlaceholder' })}
-                value={message}
-                onChange={e => setMessage(e.target.value)}
-                rows={4}
-              />
+            <div className={css.confirmRow}>
+              <Button
+                className={css.primaryButton}
+                onClick={handleCashSubmit}
+                disabled={submitting || speculateTransactionInProgress}
+              >
+                {submitting ? (
+                  <FormattedMessage id="CheckoutPage.confirming" />
+                ) : (
+                  <FormattedMessage id="CheckoutPage.payInCash.confirmButton" />
+                )}
+              </Button>
+            </div>
 
-              <div className={css.actionRow}>
-                <Button className={css.submitButton} onClick={onSubmit}>
-                  {intl.formatMessage({ id: 'CheckoutPage.cash.submit' })}
-                </Button>
-
-                <Button className={css.secondaryButton} type="button" onClick={goBackToListing}>
-                  ← {intl.formatMessage({ id: 'CheckoutPage.backToListing' })}
-                </Button>
-              </div>
+            <div className={css.backLinkRow}>
+              <NamedLink name="ListingPage" params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}>
+                ← <FormattedMessage id="CheckoutPage.backToListing" />
+              </NamedLink>
             </div>
           </section>
         </div>
@@ -364,11 +233,8 @@ const CheckoutCashPageImpl = props => {
           listing={listing}
           listingTitle={listingTitle}
           author={listing?.author}
-          firstImage={firstImage}
+          firstImage={listing?.images?.length > 0 ? listing.images[0] : null}
           layoutListingImageConfig={config.layout.listingImage}
-          speculateTransactionErrorMessage={errorMessages.speculateTransactionErrorMessage}
-          isInquiryProcess={false}
-          processName={processName}
           breakdown={breakdown}
           showListingImage={showListingImage}
           intl={intl}
@@ -378,51 +244,4 @@ const CheckoutCashPageImpl = props => {
   );
 };
 
-// ---------- Redux wiring ----------
-
-const mapStateToProps = state => {
-  const {
-    listing,
-    orderData,
-    speculatedTransaction,
-    speculateTransactionError,
-    transaction,
-    initiateOrderError,
-  } = state.CheckoutPage;
-  const { currentUser } = state.user;
-
-  return {
-    scrollingDisabled: isScrollingDisabled(state),
-    currentUser,
-    listing,
-    orderData,
-    speculatedTransaction,
-    speculateTransactionError,
-    transaction,
-    initiateOrderError,
-  };
-};
-
-const mapDispatchToProps = dispatch => ({
-  dispatch,
-  fetchSpeculatedTransaction: (params, processAlias, txId, transitionName, isPrivileged) =>
-    dispatch(speculateTransaction(params, processAlias, txId, transitionName, isPrivileged)),
-  onInitiateOrder: (params, processAlias, transactionId, transitionName, isPrivileged) =>
-    dispatch(initiateOrder(params, processAlias, transactionId, transitionName, isPrivileged)),
-  onSendMessage: params => dispatch(sendMessage(params)),
-});
-
-const CheckoutCashPage = compose(
-  connect(mapStateToProps, mapDispatchToProps)
-)(CheckoutCashPageImpl);
-
-CheckoutCashPage.setInitialValues = (initialValues, saveToSessionStorage = false) => {
-  if (saveToSessionStorage) {
-    const { listing, orderData } = initialValues || {};
-    storeData(orderData, listing, null, STORAGE_KEY);
-  }
-  return setInitialValues(initialValues);
-};
-
-CheckoutCashPage.displayName = 'CheckoutCashPage';
 export default CheckoutCashPage;
