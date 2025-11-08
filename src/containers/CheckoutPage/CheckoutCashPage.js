@@ -1,3 +1,4 @@
+// src/containers/CheckoutPage/CheckoutCashPage.js
 import React, { useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { FormattedMessage } from '../../util/reactIntl';
@@ -7,24 +8,23 @@ import { getProcess } from '../../transactions/transaction';
 import { ensureTransaction } from '../../util/data';
 import { H3, H4, Page, Button, NamedLink } from '../../components';
 
-import CustomTopbar from '../CheckoutPage/CustomTopbar';
-import DetailsSideCard from '../CheckoutPage/DetailsSideCard';
-import MobileListingImage from '../CheckoutPage/MobileListingImage';
-import MobileOrderBreakdown from '../CheckoutPage/MobileOrderBreakdown';
+import CustomTopbar from './CustomTopbar';
+import DetailsSideCard from './DetailsSideCard';
+import MobileListingImage from './MobileListingImage';
+import MobileOrderBreakdown from './MobileOrderBreakdown';
 import OrderBreakdown from '../../components/OrderBreakdown/OrderBreakdown';
 
 import {
   bookingDatesMaybe,
-  getBillingDetails,
-  getFormattedTotalPrice,
   getShippingDetailsMaybe,
+  getFormattedTotalPrice,
   getTransactionTypeData,
-} from '../CheckoutPage/CheckoutPageTransactionHelpers.js';
+} from './CheckoutPageTransactionHelpers.js';
 
-import css from '../CheckoutPage/CheckoutPage.module.css';
+import css from './CheckoutPage.module.css';
 
 /**
- * Construire orderParams (version minimale reprise du code de CheckoutPageWithPayment)
+ * Helper pour construire les orderParams (similaire à CheckoutPageWithPayment)
  */
 const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
@@ -53,7 +53,7 @@ const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config
     },
   };
 
-  const orderParams = {
+  return {
     listingId: pageData?.listing?.id,
     ...deliveryMethodMaybe,
     ...quantityMaybe,
@@ -63,8 +63,6 @@ const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config
     ...protectedDataMaybe,
     ...optionalPaymentParams,
   };
-
-  return orderParams;
 };
 
 const CheckoutCashPage = props => {
@@ -83,19 +81,21 @@ const CheckoutCashPage = props => {
   const [submitting, setSubmitting] = useState(false);
 
   const { listing, transaction } = pageData || {};
-  const existingTransaction = ensureTransaction(transaction);
-  const tx = existingTransaction;
+  const tx = ensureTransaction(transaction);
   const listingTitle = listing?.attributes?.title;
+
   const title = intl.formatMessage(
     { id: 'CheckoutPage.reloue-booking-cash.title' },
-    { listingTitle, authorDisplayName: listing?.author?.attributes?.profile?.displayName || '' }
+    {
+      listingTitle,
+      authorDisplayName: listing?.author?.attributes?.profile?.displayName || '',
+    }
   );
 
   const processName = 'reloue-booking-cash';
   const process = getProcess(processName);
   const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
 
-  // Build breakdown using existing or speculated transaction (if any)
   const breakdown =
     tx?.id && tx.attributes.lineItems?.length > 0 ? (
       <OrderBreakdown
@@ -109,7 +109,7 @@ const CheckoutCashPage = props => {
 
   const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
 
-  // Determine correct transition to call for initiation (mirrors CheckoutPageWithPayment logic)
+  // Déterminer la transition à utiliser (comme CheckoutPageWithPayment)
   const transitions = process?.transitions || {};
   const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === transitions.INQUIRE;
   const requestTransition = isInquiryInPaymentProcess
@@ -122,11 +122,10 @@ const CheckoutCashPage = props => {
     setSubmitting(true);
 
     try {
-      const shippingDetails = getShippingDetailsMaybe({}); // no shipping by default, but keep helper
-      const optionalPaymentParams = {}; // no stripe params for cash
+      const shippingDetails = getShippingDetailsMaybe({});
+      const optionalPaymentParams = {}; // Pas de Stripe
       const orderParams = getOrderParams(pageData, shippingDetails, optionalPaymentParams, config);
 
-      // onInitiateOrder signature: (params, processAlias, transactionId, transitionName, isPrivileged)
       const processAlias = transactionProcessAlias;
       const transactionId = tx?.id || null;
 
@@ -138,19 +137,16 @@ const CheckoutCashPage = props => {
         isPrivileged
       );
 
-      // Try to obtain an orderId to navigate to OrderDetailsPage like in other flows.
-      // The duck might return the created order id in different shapes; attempt common ones.
+      // Extraction flexible de l’orderId
       const orderId =
-        (response && response.orderId) ||
-        (response && response.data && response.data.id) ||
-        (response && response.data && response.data.id && response.data.id.uuid) ||
-        (response && response.id) ||
-        (response && response.uuid) ||
+        response?.orderId ||
+        response?.data?.id ||
+        response?.data?.id?.uuid ||
+        response?.id ||
+        response?.uuid ||
         null;
 
-      // If we can build a route to the OrderDetailsPage
       if (orderId) {
-        // If orderId is an object with uuid
         const idUuid = orderId.uuid ? orderId.uuid : orderId;
         const orderDetailsPath = pathByRouteName('OrderDetailsPage', config.routeConfiguration || {}, {
           id: idUuid,
@@ -158,11 +154,11 @@ const CheckoutCashPage = props => {
         onSubmitCallback && onSubmitCallback();
         history.push(orderDetailsPath);
       } else {
-        // Fallback: redirect to listing or show a simple confirmation page
         onSubmitCallback && onSubmitCallback();
         history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
       }
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('CheckoutCashPage: error initiating cash order', err);
     } finally {
       setSubmitting(false);
@@ -191,7 +187,10 @@ const CheckoutCashPage = props => {
             </H4>
           </div>
 
-          <MobileOrderBreakdown breakdown={breakdown} priceVariantName={tx?.attributes?.protectedData?.priceVariantName} />
+          <MobileOrderBreakdown
+            breakdown={breakdown}
+            priceVariantName={tx?.attributes?.protectedData?.priceVariantName}
+          />
 
           <section className={css.paymentContainer}>
             <div className={css.cashNotice}>
