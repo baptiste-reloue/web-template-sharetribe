@@ -108,7 +108,7 @@ const CheckoutCashPage = props => {
       const orderParams = buildOrderParams(pageData, config);
 
       // On garde l'alias de process publié sur l’annonce
-      const processAlias = listing?.attributes?.publicData?.transactionProcessAlias || 'reloue-booking-cash/release-1';
+      const processAlias = listing?.attributes?.publicData?.transactionProcessAlias || 'reloue-booking-cash';
       const transactionId = tx?.id || null;
 
       // On passe un nom de transition "request-payment" utilisé partout par défaut
