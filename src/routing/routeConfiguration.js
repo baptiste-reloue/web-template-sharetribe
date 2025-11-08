@@ -126,8 +126,8 @@ const routeConfiguration = (layoutConfig, accessControlConfig) => {
       path: '/l/:slug/:id/checkout-cash',
       name: 'CheckoutCashPage',
       auth: true,
-      component: CheckoutCashPage,
-      setInitialValues: pageDataLoadingAPI.CheckoutCashPage.setInitialValues,
+      component: CheckoutPage,
+      setInitialValues: pageDataLoadingAPI.CheckoutPage.setInitialValues,
     },
     {
       path: '/l/:slug/:id/:variant',
