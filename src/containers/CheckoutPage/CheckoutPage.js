@@ -271,12 +271,7 @@ const EnhancedCheckoutPage = props => {
             <p className={css.choiceNote}>
               {intl.formatMessage({ id: 'CheckoutPage.choosePayment.note' })}
             </p>
-
-            <div className={css.choiceFooter}>
-              <button type="button" className={css.backWideBtn} onClick={goBackToListing}>
-                ← {intl.formatMessage({ id: 'CheckoutPage.backToListing' })}
-              </button>
-            </div>
+              
           </div>
         </div>
       </Page>
