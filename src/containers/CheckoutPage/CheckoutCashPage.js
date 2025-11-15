@@ -7,7 +7,7 @@ import { propTypes } from '../../util/types';
 import { ensureTransaction } from '../../util/data';
 import { createSlug } from '../../util/urlHelpers';
 import { isTransactionInitiateListingNotFoundError } from '../../util/errors';
-import { getProcess } from '../../transactions/transaction';
+import { getProcess, isBookingProcessAlias } from '../../transactions/transaction';
 
 // Shared components
 import { H3, H4, NamedLink, OrderBreakdown, Page, Button } from '../../components';
@@ -28,62 +28,90 @@ import MobileOrderBreakdown from './MobileOrderBreakdown';
 
 import css from './CheckoutPage.module.css';
 
-// ---------- helpers identiques à la page carte ----------
+// ---------- helpers (copiés de la page carte) ----------
 const cap = s => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-const prefixPriceVariantProperties = pv =>
-  pv ? Object.fromEntries(Object.entries(pv).map(([k, v]) => [`priceVariant${cap(k)}`, v])) : {};
+const prefixPriceVariantProperties = priceVariant => {
+  if (!priceVariant) return {};
+  return Object.fromEntries(
+    Object.entries(priceVariant).map(([k, v]) => [`priceVariant${cap(k)}`, v])
+  );
+};
 
-const buildOrderParams = (pageData, config) => {
+// Construit orderParams (identique à la carte, mais sans params Stripe + flag de méthode)
+const getOrderParams = (pageData, shippingDetails, optionalPaymentParams, config) => {
   const quantity = pageData.orderData?.quantity;
+  const quantityMaybe = quantity ? { quantity } : {};
   const seats = pageData.orderData?.seats;
+  const seatsMaybe = seats ? { seats } : {};
   const deliveryMethod = pageData.orderData?.deliveryMethod;
-
+  const deliveryMethodMaybe = deliveryMethod ? { deliveryMethod } : {};
   const { listingType, unitType, priceVariants } = pageData?.listing?.attributes?.publicData || {};
-  const priceVariantName = pageData.orderData?.priceVariantName;
-  const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
 
-  const protectedData = {
-    ...getTransactionTypeData(listingType, unitType, config),
-    ...(deliveryMethod ? { deliveryMethod } : {}),
-    ...prefixPriceVariantProperties(priceVariant),
-    paymentMethod: 'cash', // simple marqueur côté back
+  const priceVariantName = pageData.orderData?.priceVariantName;
+  const priceVariantNameMaybe = priceVariantName ? { priceVariantName } : {};
+  const priceVariant = priceVariants?.find(pv => pv.name === priceVariantName);
+  const priceVariantMaybe = priceVariant ? prefixPriceVariantProperties(priceVariant) : {};
+
+  const protectedDataMaybe = {
+    protectedData: {
+      ...getTransactionTypeData(listingType, unitType, config),
+      ...deliveryMethodMaybe,
+      ...shippingDetails,
+      ...priceVariantMaybe,
+      paymentMethod: 'cash', // simple marqueur back
+    },
   };
 
   return {
     listingId: pageData?.listing?.id,
-    ...(deliveryMethod ? { deliveryMethod } : {}),
-    ...(quantity ? { quantity } : {}),
-    ...(seats ? { seats } : {}),
+    ...deliveryMethodMaybe,
+    ...quantityMaybe,
+    ...seatsMaybe,
     ...bookingDatesMaybe(pageData.orderData?.bookingDates),
-    ...(priceVariantName ? { priceVariantName } : {}),
-    protectedData,
-    ...getShippingDetailsMaybe({}),
+    ...priceVariantNameMaybe,
+    ...protectedDataMaybe,
+    ...optionalPaymentParams, // (vide pour cash)
   };
 };
 
 // ---------- préchargement (speculated transaction) ----------
 export const loadInitialDataForCashPayments = ({ pageData, fetchSpeculatedTransaction, config }) => {
-  const tx = pageData?.transaction;
+  const tx = pageData?.transaction || null;
   const listing = pageData?.listing;
-  const processName =
+  const discoveredProcessName =
     tx?.attributes?.processName ||
-    listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0];
+    listing?.attributes?.publicData?.transactionProcessAlias?.split('/')[0] ||
+    null;
 
-  const process = processName ? getProcess(processName) : null;
-  if (!pageData?.listing?.id || !pageData?.orderData || !process) return;
+  const process = discoveredProcessName ? getProcess(discoveredProcessName) : null;
+  const shouldFetchSpeculated =
+    !!pageData?.listing?.id &&
+    !!pageData?.orderData &&
+    !!process &&
+    !hasTransactionPassedPendingPayment(tx, process);
 
-  if (!hasTransactionPassedPendingPayment(tx, process)) {
-    const orderParams = buildOrderParams(pageData, config);
-    const processAlias = 'reloue-booking-cash';
-    const transactionId = tx ? tx.id : null;
-    const isInquiryInPaymentProcess = tx?.attributes?.lastTransition === process.transitions.INQUIRE;
-    const requestTransition = isInquiryInPaymentProcess
-      ? process.transitions.REQUEST_PAYMENT_AFTER_INQUIRY
-      : process.transitions.REQUEST_PAYMENT;
-    const isPrivileged = process.isPrivileged(requestTransition);
+  if (!shouldFetchSpeculated) return;
 
-    fetchSpeculatedTransaction(orderParams, processAlias, transactionId, requestTransition, isPrivileged);
-  }
+  const orderParams = getOrderParams(pageData, {}, {}, config);
+  const transactionId = tx ? tx.id : null;
+
+  // transitions robustes: fallback en texte si nécessaire
+  const transitions = process?.transitions || {};
+  const isInquiry = tx?.attributes?.lastTransition === transitions?.INQUIRE;
+  const requestTransition = isInquiry
+    ? transitions?.REQUEST_PAYMENT_AFTER_INQUIRY || 'transition/request-payment-after-inquiry'
+    : transitions?.REQUEST_PAYMENT || 'transition/request-payment';
+  const isPrivileged = process && transitions && requestTransition
+    ? !!process.isPrivileged?.(requestTransition)
+    : false;
+
+  fetchSpeculatedTransaction(
+    orderParams,
+    'reloue-booking-cash/release-1',
+    transactionId,
+    requestTransition,
+    isPrivileged
+  );
 };
 
 // ---------- page (même squelette que CheckoutPageWithPayment, sans Stripe) ----------
@@ -98,7 +126,7 @@ const CheckoutCashPage = props => {
     intl,
     showListingImage,
     pageData,
-    processName,          // transmis par CheckoutPage: "reloue-booking-cash"
+    processName,          // "reloue-booking-cash" (fourni par CheckoutPage)
     listingTitle,
     title,
     config,
@@ -108,8 +136,8 @@ const CheckoutCashPage = props => {
     onSubmitCallback,
   } = props;
 
-  // process & alias cash (on force l’alias cash)
   const process = processName ? getProcess(processName) : null;
+  const transitions = process?.transitions || {};
   const processAlias = 'reloue-booking-cash/release-1';
 
   const listingNotFound =
@@ -117,17 +145,22 @@ const CheckoutCashPage = props => {
     isTransactionInitiateListingNotFoundError(initiateOrderError);
 
   const { listing, transaction } = pageData || {};
-  const existingTx = ensureTransaction(transaction);
-  const speculatedTx = ensureTransaction(speculatedTransactionMaybe, {}, null);
+  const existingTransaction = ensureTransaction(transaction);
+  const speculatedTransaction = ensureTransaction(speculatedTransactionMaybe, {}, null);
 
-  const tx = existingTx?.attributes?.lineItems?.length > 0 ? existingTx : speculatedTx;
+  // tx = existante (avec lineItems) sinon speculée
+  const tx =
+    existingTransaction?.attributes?.lineItems?.length > 0
+      ? existingTransaction
+      : speculatedTransaction;
 
   const timeZone = listing?.attributes?.availabilityPlan?.timezone;
-  const priceVariantName = tx.attributes?.protectedData?.priceVariantName;
+  const transactionProcessAlias = listing?.attributes?.publicData?.transactionProcessAlias;
+  const priceVariantName = tx?.attributes?.protectedData?.priceVariantName;
   const txBookingMaybe = tx?.booking?.id ? { booking: tx.booking, timeZone } : {};
 
   const breakdown =
-    tx.id && tx.attributes.lineItems?.length > 0 ? (
+    tx?.id && tx?.attributes?.lineItems?.length > 0 ? (
       <OrderBreakdown
         className={css.orderBreakdown}
         userRole="customer"
@@ -139,11 +172,14 @@ const CheckoutCashPage = props => {
     ) : null;
 
   const totalPrice = tx?.attributes?.lineItems?.length > 0 ? getFormattedTotalPrice(tx, intl) : null;
-  const transitions = process?.transitions || {};
+
   const firstImage = listing?.images?.[0] || null;
 
   const listingLink = (
-    <NamedLink name="ListingPage" params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}>
+    <NamedLink
+      name="ListingPage"
+      params={{ id: listing?.id?.uuid, slug: createSlug(listingTitle) }}
+    >
       <FormattedMessage id="CheckoutPage.errorlistingLinkText" />
     </NamedLink>
   );
@@ -151,8 +187,8 @@ const CheckoutCashPage = props => {
   const errorMessages = getErrorMessages(
     listingNotFound,
     initiateOrderError,
-    false, // expired (non concerné en cash)
-    null,  // retrievePaymentIntentError (n’existe pas ici)
+    false,                 // isPaymentExpired (non pertinent en cash)
+    null,                  // retrievePaymentIntentError (pas de Stripe)
     speculateTransactionError,
     listingLink
   );
@@ -160,21 +196,25 @@ const CheckoutCashPage = props => {
   const handleCashSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
+
     try {
-      const orderParams = buildOrderParams(pageData, config);
+      const shippingDetails = getShippingDetailsMaybe({});
+      const orderParams = getOrderParams(pageData, shippingDetails, {}, config);
 
-      // même logique de transition que la page carte
-      const isInquiry = existingTx?.attributes?.lastTransition === transitions.INQUIRE;
+      // transitions robustes avec fallback
+      const isInquiry = existingTransaction?.attributes?.lastTransition === transitions?.INQUIRE;
       const requestTransition = isInquiry
-        ? transitions.REQUEST_PAYMENT_AFTER_INQUIRY
-        : transitions.REQUEST_PAYMENT;
-      const isPrivileged = process && requestTransition ? process.isPrivileged(requestTransition) : false;
+        ? transitions?.REQUEST_PAYMENT_AFTER_INQUIRY || 'transition/request-payment-after-inquiry'
+        : transitions?.REQUEST_PAYMENT || 'transition/request-payment';
+      const isPrivileged = process && transitions && requestTransition
+        ? !!process.isPrivileged?.(requestTransition)
+        : false;
 
-      const transactionId = existingTx?.id || null;
+      const transactionId = existingTransaction?.id || null;
 
       const res = await onInitiateOrder(
         orderParams,
-        processAlias,      // <— on force le process CASH
+        processAlias,
         transactionId,
         requestTransition,
         isPrivileged
@@ -213,7 +253,9 @@ const CheckoutCashPage = props => {
 
         <div className={css.orderFormContainer}>
           <div className={css.headingContainer}>
-            <H3 as="h1" className={css.heading}>{title}</H3>
+            <H3 as="h1" className={css.heading}>
+              {title}
+            </H3>
             <H4 as="h2" className={css.detailsHeadingMobile}>
               <FormattedMessage id="CheckoutPage.listingTitle" values={{ listingTitle }} />
             </H4>
@@ -230,7 +272,7 @@ const CheckoutCashPage = props => {
             {errorMessages.listingNotFoundErrorMessage}
             {errorMessages.speculateErrorMessage}
 
-            {/* Bloc cash minimaliste (à la place du StripePaymentForm) */}
+            {/* Bloc cash à la place du StripePaymentForm */}
             <div className={css.cashBox}>
               <p><FormattedMessage id="CheckoutPage.payInCash.instruction" /></p>
               {totalPrice ? (
