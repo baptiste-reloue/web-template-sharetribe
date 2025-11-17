@@ -6,10 +6,10 @@ import { pathByRouteName } from '../../util/routes';
 import { propTypes } from '../../util/types';
 import { createSlug } from '../../util/urlHelpers';
 
-// Components (on ne garde que des imports sûrs)
+// Components
 import { Page, H3, Button, NamedLink } from '../../components';
 
-// Helpers partagés avec la page carte
+// Helpers partagés
 import {
   bookingDatesMaybe,
   getShippingDetailsMaybe,
@@ -21,12 +21,10 @@ import css from './CheckoutPage.module.css';
 
 // -----------------------------------------------------
 // 1) Préchargement pour le mode CASH
-// Ici on ne fait volontairement RIEN pour éviter tout crash.
-// CheckoutPage appelle cette fonction → elle est "no-op" donc safe.
+// (no-op pour ne rien casser si CheckoutPage l'appelle)
 // -----------------------------------------------------
 export const loadInitialDataForCashPayments = () => {
-  // no-op volontairement :
-  // pas de speculation de transaction, pas de getProcess, rien qui puisse planter.
+  // volontairement vide : pas de speculation, pas de Stripe
 };
 
 // -----------------------------------------------------
@@ -47,7 +45,7 @@ const buildOrderParams = (pageData, config) => {
   const protectedData = {
     ...getTransactionTypeData(listingType, unitType, config),
     ...(deliveryMethod ? { deliveryMethod } : {}),
-    // simple marqueur côté back pour différencier
+    // marqueur pour dire que le paiement se fait en espèces
     paymentMethod: 'cash',
   };
 
@@ -75,15 +73,15 @@ const CheckoutCashPage = props => {
     pageData,
     listingTitle,
     title,
-    showListingImage, // on ne l'utilise pas ici mais on le garde pour compat
+    showListingImage, // gardé pour compatibilité, même si pas utilisé ici
     onInitiateOrder,
     onSubmitCallback,
+    processName, // "reloue-booking-cash" passé par CheckoutPage (pas indispensable ici)
   } = props;
 
   const [submitting, setSubmitting] = useState(false);
 
   const listing = pageData?.listing;
-  const firstImage = listing?.images?.[0] || null;
 
   const handleConfirmCash = async () => {
     if (submitting) return;
@@ -92,11 +90,12 @@ const CheckoutCashPage = props => {
     try {
       const orderParams = buildOrderParams(pageData, config);
 
-      // On force l'alias du process CASH
+      // Process cash
       const processAlias = 'reloue-booking-cash/release-1';
 
-      // Transition générique (doit exister côté process cash)
-      const transitionName = 'transition/request-payment';
+      // ✅ transition de départ du process reloue-booking-cash :
+      // initial --request--> pending-accept
+      const transitionName = 'transition/request';
 
       const transactionId = pageData?.transaction?.id || null;
       const isPrivileged = false;
@@ -130,7 +129,6 @@ const CheckoutCashPage = props => {
         history.push(`/l/${createSlug(listingTitle)}/${listing.id.uuid}`);
       }
     } catch (e) {
-      
       console.error('CheckoutCashPage cash submit error', e);
       setSubmitting(false);
     }
@@ -208,6 +206,7 @@ CheckoutCashPage.propTypes = {
   showListingImage: propTypes.bool,
   onInitiateOrder: propTypes.func.isRequired,
   onSubmitCallback: propTypes.func.isRequired,
+  processName: propTypes.string,
 };
 
 export default CheckoutCashPage;
